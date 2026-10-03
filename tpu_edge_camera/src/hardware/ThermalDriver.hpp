@@ -1,6 +1,6 @@
 #pragma once
 
-// MLX90640 32x24 C on I2C1. Port from C_Hardware_Testing ThermalDriver + mlx90640/.
+// MLX90640 32x24 celsius on I2C1. Port from C_Hardware_Testing ThermalDriver + mlx90640/.
 
 struct ThermalDriver {
     static constexpr int width = 32;

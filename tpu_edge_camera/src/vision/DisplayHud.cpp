@@ -10,7 +10,7 @@ bool DisplayHud::init(int /*width*/, int /*height*/) {
 void DisplayHud::shutdown() {}
 
 bool DisplayHud::draw(
-    const RgbFrame& /*predator*/,
+    const RgbFrame& /*frame*/,
     const LidarMapPayload* /*lidar_or_null*/,
     const HudOverlay& /*overlay*/
 ) {

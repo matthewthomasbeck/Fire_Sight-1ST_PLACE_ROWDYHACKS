@@ -2,10 +2,10 @@
 
 #include <string>
 
+#include "vision/CameraFusion.hpp"
 #include "vision/LidarMap.hpp"
-#include "vision/PredatorFusion.hpp"
 
-// Touchscreen HUD (OpenCV/SDL). Not notcurses.
+// Touchscreen HUD (OpenCV/SDL later). Not notcurses.
 
 struct HudOverlay {
     double lat = 0.0;
@@ -22,7 +22,7 @@ struct DisplayHud {
     void shutdown();
 
     bool draw(
-        const RgbFrame& predator,
+        const RgbFrame& frame,
         const LidarMapPayload* lidar_or_null,
         const HudOverlay& overlay
     );
