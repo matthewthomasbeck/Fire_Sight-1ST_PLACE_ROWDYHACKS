@@ -7,3 +7,8 @@ llm_advice/
 .cursor
 
 .idea
+
+# build trees
+build/
+**/build/
+tpu_edge_camera/build/

@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cd "$(dirname "$0")"
+
+mkdir -p build
+cd build
+cmake ..
+cmake --build . -j"$(nproc 2>/dev/null || sysctl -n hw.ncpu)"
+
+exec ./tpu_edge_camera
