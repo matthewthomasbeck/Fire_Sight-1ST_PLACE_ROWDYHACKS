@@ -1,0 +1,211 @@
+@import url("https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..125,400..800&display=swap");
+
+:root {
+  --navy: #0c2340;
+  --navy-deep: #071629;
+  --navy-line: #24406a;
+  --orange: #f15a22;
+  --paper: #f3f6fb;
+  --muted: #9db0cc;
+  --live: #3ddc84;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--navy);
+  color: var(--paper);
+  font-family: "Archivo", "Segoe UI", system-ui, sans-serif;
+  line-height: 1.45;
+}
+
+.page {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: clamp(1rem, 3vw, 2.5rem);
+}
+
+.page__title {
+  margin: 0 0 1.25rem;
+  font-size: clamp(1.75rem, 4vw, 2.75rem);
+  font-weight: 800;
+  font-stretch: 118%;
+  letter-spacing: -0.02em;
+  line-height: 1.05;
+}
+
+/* ---------- frame ---------- */
+
+.stream__frame {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  background: var(--navy-deep);
+  border: 2px solid var(--navy-line);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.stream__frame:fullscreen {
+  border: 0;
+  border-radius: 0;
+}
+
+.stream__media {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #000;
+}
+
+.stream__notice {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: clamp(1.25rem, 5vw, 4rem);
+  background: var(--navy-deep);
+}
+
+.stream__notice h2 {
+  margin: 0;
+  font-size: clamp(1.25rem, 3vw, 2rem);
+  font-weight: 700;
+  font-stretch: 112%;
+}
+
+.stream__notice p {
+  margin: 0.5rem 0 0;
+  max-width: 46ch;
+  color: var(--muted);
+}
+
+/* ---------- status ---------- */
+
+.stream__status {
+  position: absolute;
+  top: 0.75rem;
+  left: 0.75rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.3rem 0.7rem;
+  border-radius: 999px;
+  background: rgba(7, 22, 41, 0.85);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.stream__dot {
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+.stream__status--connecting .stream__dot,
+.stream__status--offline .stream__dot {
+  background: var(--orange);
+}
+
+.stream__status--live .stream__dot {
+  background: var(--live);
+  animation: pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stream__status--live .stream__dot {
+    animation: none;
+  }
+}
+
+/* ---------- controls ---------- */
+
+.stream__controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.stream__source {
+  flex: 1 1 22rem;
+}
+
+.stream__source label {
+  display: block;
+  margin-bottom: 0.35rem;
+  font-size: 0.875rem;
+  color: var(--muted);
+}
+
+.stream__row,
+.stream__actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.stream__row input {
+  flex: 1;
+  min-width: 0;
+  padding: 0.65rem 0.8rem;
+  border: 2px solid var(--navy-line);
+  border-radius: 6px;
+  background: var(--navy-deep);
+  color: var(--paper);
+  font: inherit;
+}
+
+.stream__row input::placeholder {
+  color: #5f7699;
+}
+
+.btn {
+  padding: 0.65rem 1rem;
+  border: 2px solid var(--navy-line);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--paper);
+  font: inherit;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.btn:hover:not(:disabled) {
+  border-color: var(--paper);
+}
+
+.btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.btn--primary {
+  border-color: var(--orange);
+  background: var(--orange);
+  color: #fff;
+}
+
+.btn--primary:hover:not(:disabled) {
+  border-color: #ff7a47;
+  background: #ff7a47;
+}
+
+.btn:focus-visible,
+.stream__row input:focus-visible {
+  outline: 3px solid var(--paper);
+  outline-offset: 2px;
+}

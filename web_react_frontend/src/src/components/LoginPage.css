@@ -1,0 +1,114 @@
+/* Uses the color variables and .btn styles from StreamPlayer.css */
+
+.login {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  padding: clamp(1.25rem, 6vw, 5rem);
+}
+
+.login__form {
+  width: 100%;
+  max-width: 24rem;
+}
+
+.login__title {
+  margin: 0 0 2rem;
+  font-size: clamp(2rem, 6vw, 3.25rem);
+  font-weight: 800;
+  font-stretch: 118%;
+  letter-spacing: -0.02em;
+  line-height: 1.02;
+}
+
+.login__field {
+  margin-bottom: 1.1rem;
+}
+
+.login__field label {
+  display: block;
+  margin-bottom: 0.35rem;
+  font-size: 0.875rem;
+  color: var(--muted);
+}
+
+.login__field input {
+  width: 100%;
+  padding: 0.7rem 0.8rem;
+  border: 2px solid var(--navy-line);
+  border-radius: 6px;
+  background: var(--navy-deep);
+  color: var(--paper);
+  font: inherit;
+}
+
+.login__password {
+  position: relative;
+}
+
+.login__password input {
+  padding-right: 4.25rem;
+}
+
+.login__toggle {
+  position: absolute;
+  top: 50%;
+  right: 0.4rem;
+  transform: translateY(-50%);
+  padding: 0.3rem 0.55rem;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.login__toggle:hover {
+  color: var(--paper);
+}
+
+.login__error {
+  margin: 0 0 1.1rem;
+  padding: 0.65rem 0.8rem;
+  border-left: 4px solid var(--orange);
+  background: rgba(241, 90, 34, 0.14);
+  border-radius: 0 6px 6px 0;
+}
+
+.login__submit {
+  width: 100%;
+  margin-top: 0.4rem;
+  padding-block: 0.8rem;
+}
+
+.login__field input:focus-visible,
+.login__toggle:focus-visible {
+  outline: 3px solid var(--paper);
+  outline-offset: 2px;
+}
+
+/* ---------- signed-in page header ---------- */
+
+.page__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.page__header .page__title {
+  margin: 0;
+}
+
+.page__account {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  color: var(--muted);
+}
