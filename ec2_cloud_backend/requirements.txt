@@ -1,0 +1,9 @@
+# RowdyHacks ec2_cloud_backend (skeleton)
+
+flask>=2.3.0
+flask-cors>=4.0.0
+flask-socketio>=5.3.0
+gunicorn>=21.2.0
+requests>=2.31.0
+python-dotenv>=1.0.0
+PyJWT[crypto]>=2.8.0
