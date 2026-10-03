@@ -1,6 +1,6 @@
 .env*
 
-DS_Store/
+.DS_Store
 
 llm_advice/
 
