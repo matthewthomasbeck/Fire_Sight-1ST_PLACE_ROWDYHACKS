@@ -1,0 +1,11 @@
+services:
+  web:
+    build:
+      context: .
+      args:
+        VITE_STREAM_URL: ${VITE_STREAM_URL:-}
+        VITE_LOGIN_URL: ${VITE_LOGIN_URL:-}
+        VITE_DEMO_USER: ${VITE_DEMO_USER:-}
+        VITE_DEMO_PASSWORD: ${VITE_DEMO_PASSWORD:-}
+    ports:
+      - "8080:80"
