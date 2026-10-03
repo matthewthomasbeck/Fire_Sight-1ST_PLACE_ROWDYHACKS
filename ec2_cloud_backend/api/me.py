@@ -1,19 +1,47 @@
 ############################################################
-# GET /api/v1/me. Auth0 smoke test for the dispatch SPA.
+############### IMPORT / CREATE DEPENDENCIES ###############
 ############################################################
 
-from flask import Blueprint, g, jsonify
 
-from helpers.auth0 import require_auth
+########## IMPORT DEPENDENCIES ##########
 
-me_bp = Blueprint("me", __name__)
+##### import third-party libraries #####
+
+from flask import Blueprint, g, jsonify # import Flask request/response helpers
+
+##### import local modules #####
+
+from helpers.auth0 import require_auth # import Auth0 bearer-token decorator for SPA users
 
 
-@me_bp.route("/me", methods=["GET"])
-@require_auth
-def me():
-    """Return Auth0 sub for the logged-in dispatcher."""
+
+
+
+##################################################
+############### ME BLUEPRINT #####################
+##################################################
+
+
+########## CREATE BLUEPRINT ##########
+
+me_bp = Blueprint("me", __name__) # create blueprint for /api/v1/me
+
+
+
+
+
+##################################################
+############### AUTH ROUTES ######################
+##################################################
+
+
+########## ME ##########
+
+@me_bp.route("/me", methods=["GET"]) # register GET /api/v1/me
+@require_auth # require dispatch SPA Auth0 access token
+def me(): # function to return Auth0 sub/claims for the logged-in dispatcher
+
     return jsonify({
         "sub": getattr(g, "user_sub", None),
-        "claims": getattr(g, "user_claims", None),
-    }), 200
+        "claims": getattr(g, "user_claims", {}),
+    }), 200 # Auth0 identity for React SPA

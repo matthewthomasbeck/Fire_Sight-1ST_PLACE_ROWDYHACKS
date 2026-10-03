@@ -27,6 +27,7 @@ from api.health import health_bp
 from api.ingest import ingest_bp
 from api.me import me_bp
 from api.streams import streams_bp
+from helpers.auth0 import auth0_config_summary
 from helpers.video_pipeline import init_socketio, socketio
 from helpers.workers import start_workers
 
@@ -39,6 +40,20 @@ def setup_logging() -> None:
         level=level,
         format="%(asctime)s - %(levelname)s (%(name)s): %(message)s",
     )
+
+
+def _log_auth0_config(logger: logging.Logger) -> None:
+    """Log Auth0 domain/audience/issuer at startup (no secrets)."""
+    try:
+        cfg = auth0_config_summary()
+        logger.info(
+            "Auth0 user JWT: domain=%s audience=%s issuer=%s",
+            cfg["domain"],
+            cfg["audience"],
+            cfg["issuer"],
+        )
+    except ValueError as exc:
+        logger.error("Auth0 env incomplete: %s", exc)
 
 
 def create_app() -> Flask:
@@ -61,12 +76,13 @@ app = create_app()
 def main() -> None:
     setup_logging()
     logger = logging.getLogger(__name__)
+    _log_auth0_config(logger)
 
     start_workers()
 
     host = os.getenv("HOST", "0.0.0.0")
     port = int(os.getenv("PORT", "8080"))
-    logger.info("Starting ec2_cloud_backend skeleton on %s:%s", host, port)
+    logger.info("Starting ec2_cloud_backend on %s:%s", host, port)
 
     socketio.run(
         app,

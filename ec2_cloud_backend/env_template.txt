@@ -1,27 +1,23 @@
-# Auth0 user JWT (dispatch SPA to EC2). Same shape as Solana_Soothsayer/application_backend
-AUTH0_DOMAIN=YOUR_TENANT.us.auth0.com
+# Auth0 user JWT (React SPA to EC2)
+AUTH0_DOMAIN=
 AUTH0_AUDIENCE=https://rowdyhacks.dispatch.api
-AUTH0_ISSUER=https://YOUR_TENANT.us.auth0.com/
+AUTH0_ISSUER=
 
-# Auth0 M2M (optional: Pi ingest / nvidia_edge)
+# Auth0 M2M (RowdyHacks Edge M2M)
 AUTH0_M2M_CLIENT_ID=
 AUTH0_M2M_CLIENT_SECRET=
 AUTH0_PREDICTOR_AUDIENCE=https://rowdyhacks.edge.api
 
-# Optional edge forward
 EDGE_BASE_URL=
 EDGE_FORWARD_ENABLED=false
 
-# Google Maps
 GOOGLE_MAPS_API_KEY=
 
-# App
 HOST=0.0.0.0
 PORT=8080
 LOG_LEVEL=INFO
 CORS_ORIGINS=*
 FLASK_DEBUG=false
 
-# Resource ids the frontend can request
 STREAM_IDS=stream_1,stream_2
 GPS_IDS=gps_1,gps_2
