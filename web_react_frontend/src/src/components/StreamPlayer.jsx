@@ -2,10 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import "./StreamPlayer.css";
 
 const RETRY_MS = 3000;
+const POLL_MS = 120;
 const STORAGE_KEY = "streamUrl";
-// If your server sends PNG or WebP frames as raw binary/base64, change this.
 const FRAME_MIME = "image/jpeg";
-// Field names checked when the server sends JSON messages.
 const JSON_FRAME_KEYS = ["image", "frame", "data", "jpg", "jpeg"];
 
 function readSaved() {
@@ -16,7 +15,6 @@ function readSaved() {
   }
 }
 
-// Turns one text message into something an <img> can show, or null.
 function textToSrc(text) {
   let value = text.trim();
   if (value.startsWith("{")) {
@@ -33,12 +31,21 @@ function textToSrc(text) {
   return value.startsWith("data:") ? value : `data:${FRAME_MIME};base64,${value}`;
 }
 
+function isHttpUrl(url) {
+  return /^https?:\/\//i.test(url);
+}
+
+function isWsUrl(url) {
+  return /^wss?:\/\//i.test(url);
+}
+
 const STATUS_TEXT = {
   idle: "No stream",
   invalid: "Check the address",
   connecting: "Connecting",
   live: "Live",
   offline: "Offline, retrying",
+  waiting: "Waiting for frames",
 };
 
 export default function StreamPlayer({ defaultUrl = "" }) {
@@ -56,23 +63,11 @@ export default function StreamPlayer({ defaultUrl = "" }) {
       setStatus("idle");
       return;
     }
-    if (!/^wss?:\/\//i.test(url)) {
-      setStatus("invalid");
-      return;
-    }
-    setStatus((prev) => (prev === "offline" ? "offline" : "connecting"));
 
     let stopped = false;
     let retryTimer = null;
     let lastObjectUrl = null;
     let frames = 0;
-
-    const retry = () => {
-      if (stopped) return;
-      setStatus("offline");
-      setFps(0);
-      retryTimer = setTimeout(() => setAttempt((a) => a + 1), RETRY_MS);
-    };
 
     const show = (src, isObjectUrl) => {
       const img = imgRef.current;
@@ -84,12 +79,74 @@ export default function StreamPlayer({ defaultUrl = "" }) {
       setStatus("live");
     };
 
+    const retry = () => {
+      if (stopped) return;
+      setStatus("offline");
+      setFps(0);
+      retryTimer = setTimeout(() => setAttempt((a) => a + 1), RETRY_MS);
+    };
+
+    const fpsTimer = setInterval(() => {
+      setFps(frames);
+      frames = 0;
+    }, 1000);
+
+    // HTTP(S) JPEG poll (EC2 /api/v1/streams/<id>/jpeg)
+    if (isHttpUrl(url)) {
+      setStatus("connecting");
+      let pollTimer = null;
+
+      const tick = async () => {
+        if (stopped) return;
+        try {
+          const res = await fetch(`${url}${url.includes("?") ? "&" : "?"}t=${Date.now()}`, {
+            cache: "no-store",
+          });
+          if (res.status === 204) {
+            setStatus((prev) => (prev === "live" ? "waiting" : prev === "connecting" ? "waiting" : prev));
+          } else if (res.ok) {
+            const blob = await res.blob();
+            show(URL.createObjectURL(blob), true);
+          } else {
+            retry();
+            return;
+          }
+        } catch {
+          retry();
+          return;
+        }
+        pollTimer = setTimeout(tick, POLL_MS);
+      };
+
+      tick();
+
+      return () => {
+        stopped = true;
+        clearTimeout(retryTimer);
+        clearTimeout(pollTimer);
+        clearInterval(fpsTimer);
+        if (lastObjectUrl) URL.revokeObjectURL(lastObjectUrl);
+      };
+    }
+
+    // Raw WebSocket JPEG/base64
+    if (!isWsUrl(url)) {
+      setStatus("invalid");
+      clearInterval(fpsTimer);
+      return;
+    }
+
+    setStatus((prev) => (prev === "offline" ? "offline" : "connecting"));
+
     let ws;
     try {
       ws = new WebSocket(url);
     } catch {
       retry();
-      return () => clearTimeout(retryTimer);
+      return () => {
+        clearTimeout(retryTimer);
+        clearInterval(fpsTimer);
+      };
     }
     ws.binaryType = "blob";
 
@@ -98,17 +155,11 @@ export default function StreamPlayer({ defaultUrl = "" }) {
         const src = textToSrc(event.data);
         if (src) show(src, false);
       } else {
-        // Binary message: one encoded image per message.
         const blob = new Blob([event.data], { type: FRAME_MIME });
         show(URL.createObjectURL(blob), true);
       }
     };
-    ws.onclose = retry; // also fires after a connection error
-
-    const fpsTimer = setInterval(() => {
-      setFps(frames);
-      frames = 0;
-    }, 1000);
+    ws.onclose = retry;
 
     return () => {
       stopped = true;
@@ -125,7 +176,7 @@ export default function StreamPlayer({ defaultUrl = "" }) {
     try {
       localStorage.setItem(STORAGE_KEY, next);
     } catch {
-      /* storage unavailable, keep going */
+      /* storage unavailable */
     }
     setStatus(next ? "connecting" : "idle");
     setUrl(next);
@@ -151,23 +202,30 @@ export default function StreamPlayer({ defaultUrl = "" }) {
             {status === "idle" && (
               <>
                 <h2>No stream address yet</h2>
-                <p>Paste the WebSocket address of your EC2 stream below and connect.</p>
+                <p>
+                  Paste the EC2 JPEG poll URL, for example
+                  {" "}http://18.223.70.95:8080/api/v1/streams/stream_1/jpeg
+                </p>
               </>
             )}
             {status === "invalid" && (
               <>
-                <h2>That address won't work</h2>
-                <p>A WebSocket address starts with ws:// or wss://.</p>
+                <h2>That address will not work</h2>
+                <p>Use http(s):// for JPEG poll or ws(s):// for a raw WebSocket.</p>
               </>
             )}
             {status === "connecting" && <h2>Connecting to the stream</h2>}
+            {status === "waiting" && (
+              <>
+                <h2>Connected, waiting for frames</h2>
+                <p>Start the Pi thermal uplink to stream_1 or stream_2.</p>
+              </>
+            )}
             {status === "offline" && (
               <>
-                <h2>Can't reach the stream</h2>
+                <h2>Cannot reach the stream</h2>
                 <p>
-                  Trying again every {RETRY_MS / 1000} seconds. Check that the
-                  instance is running and its WebSocket port is open in the
-                  security group.
+                  Retrying every {RETRY_MS / 1000} seconds. Check EC2 :8080 and the URL.
                 </p>
               </>
             )}
@@ -191,7 +249,7 @@ export default function StreamPlayer({ defaultUrl = "" }) {
               inputMode="url"
               spellCheck="false"
               autoComplete="off"
-              placeholder="ws://your-ec2-address:8765"
+              placeholder="http://18.223.70.95:8080/api/v1/streams/stream_1/jpeg"
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
             />

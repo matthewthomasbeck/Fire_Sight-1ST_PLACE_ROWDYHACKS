@@ -1,10 +1,10 @@
 ############################################################
-# Pi to EC2 uplink stubs (frame / GPS JSON).
+# Pi to EC2 uplink (frame / GPS JSON).
 ############################################################
 
 from flask import Blueprint, jsonify, request
 
-from helpers.resources import store
+from helpers.resources import gps_ids, store, stream_ids
 
 ingest_bp = Blueprint("ingest", __name__)
 
@@ -13,16 +13,23 @@ ingest_bp = Blueprint("ingest", __name__)
 def ingest_frame():
     """
     Body: { "stream_id": "stream_1"|"stream_2", "frame": "<base64 jpeg>" }
-    Auth later: Auth0 M2M (Soothsayer predictor style).
+    Auth later: Auth0 M2M.
     """
     body = request.get_json(silent=True) or {}
     stream_id = body.get("stream_id")
     frame = body.get("frame")
+
+    if stream_id not in stream_ids():
+        return jsonify({"status": "error", "message": "unknown stream_id"}), 400
+    if not frame or not isinstance(frame, str):
+        return jsonify({"status": "error", "message": "frame required"}), 400
+
     try:
         store.set_stream_frame(stream_id, frame)
-        return jsonify({"status": "accepted", "stream_id": stream_id}), 202
-    except NotImplementedError:
-        return jsonify({"status": "not_implemented", "component": "VIDEO/INGEST"}), 501
+    except ValueError as exc:
+        return jsonify({"status": "error", "message": str(exc)}), 400
+
+    return jsonify({"status": "accepted", "stream_id": stream_id}), 202
 
 
 @ingest_bp.route("/ingest/gps", methods=["POST"])
@@ -32,8 +39,18 @@ def ingest_gps():
     """
     body = request.get_json(silent=True) or {}
     gps_id = body.get("gps_id")
+    if gps_id not in gps_ids():
+        return jsonify({"status": "error", "message": "unknown gps_id"}), 400
+
     try:
-        store.set_gps(gps_id, body.get("lat"), body.get("lon"))
-        return jsonify({"status": "accepted", "gps_id": gps_id}), 202
-    except NotImplementedError:
-        return jsonify({"status": "not_implemented", "component": "GPS/INGEST"}), 501
+        lat = float(body.get("lat"))
+        lon = float(body.get("lon"))
+    except (TypeError, ValueError):
+        return jsonify({"status": "error", "message": "lat/lon required"}), 400
+
+    try:
+        store.set_gps(gps_id, lat, lon)
+    except ValueError as exc:
+        return jsonify({"status": "error", "message": str(exc)}), 400
+
+    return jsonify({"status": "accepted", "gps_id": gps_id}), 202

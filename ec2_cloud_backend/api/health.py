@@ -22,9 +22,11 @@ def root():
             "me": "/api/v1/me",
             "streams": "/api/v1/streams",
             "stream": "/api/v1/streams/<stream_id>",
+            "stream_jpeg": "/api/v1/streams/<stream_id>/jpeg",
             "gps": "/api/v1/gps",
             "gps_one": "/api/v1/gps/<gps_id>",
             "maps": "/api/v1/maps/config",
-            "ingest": "POST /api/v1/ingest",
+            "ingest_frame": "POST /api/v1/ingest/frame",
+            "ingest_gps": "POST /api/v1/ingest/gps",
         },
     }), 200
