@@ -29,3 +29,14 @@ target_include_directories(tpu_edge_camera PRIVATE
 
 target_compile_options(tpu_edge_camera PRIVATE -Wall -Wextra)
 target_link_libraries(tpu_edge_camera PRIVATE pthread m)
+
+# Fullscreen HUD (Pi touchscreen). Optional so headless / Mac builds still work.
+find_package(OpenCV QUIET COMPONENTS core imgproc highgui)
+if(OpenCV_FOUND)
+  message(STATUS "OpenCV ${OpenCV_VERSION}: fullscreen HUD enabled")
+  target_compile_definitions(tpu_edge_camera PRIVATE HAS_OPENCV=1)
+  target_include_directories(tpu_edge_camera PRIVATE ${OpenCV_INCLUDE_DIRS})
+  target_link_libraries(tpu_edge_camera PRIVATE ${OpenCV_LIBS})
+else()
+  message(STATUS "OpenCV not found: HUD will be a no-op (apt install libopencv-dev)")
+endif()

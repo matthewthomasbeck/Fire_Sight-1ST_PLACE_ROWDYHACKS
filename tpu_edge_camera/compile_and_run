@@ -3,6 +3,18 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
+if [[ -f config/edge.env ]]; then
+  set -a
+  # shellcheck disable=SC1091
+  source config/edge.env
+  set +a
+fi
+
+# Touchscreen usually sits on :0 when launching over SSH.
+if [[ -z "${DISPLAY:-}" ]] && [[ -e /tmp/.X11-unix/X0 ]]; then
+  export DISPLAY=:0
+fi
+
 mkdir -p build
 cd build
 cmake ..

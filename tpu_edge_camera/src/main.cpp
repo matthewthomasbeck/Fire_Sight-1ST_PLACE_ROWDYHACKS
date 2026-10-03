@@ -1,4 +1,4 @@
-// Thermal stream uplink. IR / lidar / GPS filled later.
+// Thermal stream uplink + optional fullscreen HUD. IR / lidar / GPS filled later.
 
 #include "config/Config.hpp"
 #include "hardware/ThermalDriver.hpp"
@@ -6,9 +6,11 @@
 #include "net/UplinkClient.hpp"
 #include "util/Log.hpp"
 #include "vision/CameraFusion.hpp"
+#include "vision/DisplayHud.hpp"
 
 #include <chrono>
 #include <cstdint>
+#include <cstdlib>
 #include <thread>
 #include <vector>
 
@@ -21,6 +23,14 @@ void sleep_for_fps(int fps) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1000 / fps));
 }
 
+int env_int_or(const char* key, int fallback) {
+    const char* v = std::getenv(key);
+    if (v == nullptr || v[0] == '\0') {
+        return fallback;
+    }
+    return std::atoi(v);
+}
+
 } // namespace
 
 int main() {
@@ -31,6 +41,7 @@ int main() {
 
     ThermalDriver thermal;
     CameraFusion fusion;
+    DisplayHud hud;
     Auth0M2M auth;
     UplinkClient uplink;
 
@@ -43,15 +54,28 @@ int main() {
     }
     fusion.init();
 
+    hud.enabled = cfg.hud_enabled;
+    // Default 800x480 matches common 5" DSI panels; override with HUD_WIDTH/HEIGHT.
+    if (!hud.init(env_int_or("HUD_WIDTH", 800), env_int_or("HUD_HEIGHT", 480))) {
+        logutil::warn("HUD init failed; continuing headless");
+        hud.enabled = false;
+    }
+
     if (cfg.uplink_enabled && !uplink.connect_or_healthcheck()) {
         logutil::warn("continuing without initial health ok");
     }
 
     RgbFrame frame;
+    HudOverlay overlay;
     int ok_posts = 0;
     int fail_posts = 0;
 
     while (true) {
+        if (hud.poll_quit()) {
+            logutil::info("HUD quit requested");
+            break;
+        }
+
         if (!thermal.refresh()) {
             logutil::warn("thermal refresh failed");
             sleep_for_fps(cfg.target_fps);
@@ -69,6 +93,7 @@ int main() {
             if (fusion.encode_jpeg(frame, jpeg, 80)) {
                 if (uplink.post_frame(cfg.stream_id, jpeg)) {
                     ++ok_posts;
+                    overlay.link_status = "uplink ok #" + std::to_string(ok_posts);
                     if (ok_posts == 1 || ok_posts % 30 == 0) {
                         logutil::info(
                             "posted frame #" + std::to_string(ok_posts)
@@ -78,16 +103,24 @@ int main() {
                     }
                 } else {
                     ++fail_posts;
+                    overlay.link_status = "uplink fail";
                     if (fail_posts <= 3 || fail_posts % 30 == 0) {
                         logutil::warn("post_frame failed: " + uplink.last_error());
                     }
                 }
             }
+        } else {
+            overlay.link_status = thermal.demo_mode ? "demo" : "local";
+        }
+
+        if (hud.enabled) {
+            hud.draw(frame, nullptr, overlay);
         }
 
         sleep_for_fps(cfg.target_fps);
     }
 
+    hud.shutdown();
     uplink.shutdown();
     auth.shutdown();
     fusion.shutdown();

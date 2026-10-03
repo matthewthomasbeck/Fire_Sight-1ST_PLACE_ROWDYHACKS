@@ -5,7 +5,7 @@
 #include "vision/CameraFusion.hpp"
 #include "vision/LidarMap.hpp"
 
-// Touchscreen HUD (OpenCV/SDL later). Not notcurses.
+// Fullscreen touchscreen HUD via OpenCV (not notcurses).
 
 struct HudOverlay {
     double lat = 0.0;
@@ -28,4 +28,9 @@ struct DisplayHud {
     );
 
     bool poll_quit();
+
+private:
+    int window_w_ = 800;
+    int window_h_ = 480;
+    bool quit_requested_ = false;
 };

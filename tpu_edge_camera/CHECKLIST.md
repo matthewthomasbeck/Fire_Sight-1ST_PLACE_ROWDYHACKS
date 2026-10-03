@@ -27,8 +27,9 @@ tpu_edge_camera/
 ## Thermal win path
 
 1. Deploy updated `ec2_cloud_backend` (ResourceStore + `/streams/<id>/jpeg`)
-2. On Pi: build `tpu_edge_camera`, set `STREAM_ID` / `EC2_BASE_URL`
-3. Frontend: `VITE_STREAM_URL=http://18.223.70.95:8080/api/v1/streams/stream_1/jpeg`
+2. On Pi: `sudo apt install libopencv-dev`, build `tpu_edge_camera`, set `STREAM_ID` / `EC2_BASE_URL`
+3. Touchscreen HUD: `HUD_ENABLED=true` (default panel 800x480 via `HUD_WIDTH` / `HUD_HEIGHT`). From SSH: `DISPLAY=:0 ./compile_and_run`. Quit with `q` or Esc.
+4. Frontend: `VITE_STREAM_URL=http://18.223.70.95:8080/api/v1/streams/stream_1/jpeg`
 
 ## EC2 targets
 
