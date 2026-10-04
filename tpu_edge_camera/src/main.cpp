@@ -264,9 +264,17 @@ int main() {
                 );
             }
         } else if (gps_log_count == 1 || gps_log_count % 100 == 0) {
-            // HUD UNKNOWN: separate "port dead" vs "UART data but no lock".
+            // HUD UNKNOWN: separate "port dead" vs "UART ok, module says no lock".
+            const char* why = "no_uart_data";
+            if (gps.demo_mode) {
+                why = "demo_mode";
+            } else if (gps.rmc_void > 0) {
+                why = "awaiting_satellite_lock";
+            } else if (gps.bytes_read > 0) {
+                why = "nmea_but_no_rmc";
+            }
             logutil::warn(
-                std::string("gps no fix")
+                std::string("gps no fix (") + why + ")"
                 + (gps.demo_mode ? " demo_mode" : " live")
                 + " bytes=" + std::to_string(gps.bytes_read)
                 + " lines=" + std::to_string(gps.lines_seen)
