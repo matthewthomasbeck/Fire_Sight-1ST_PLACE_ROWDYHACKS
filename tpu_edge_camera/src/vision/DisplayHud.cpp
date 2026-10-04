@@ -218,6 +218,11 @@ void draw_test_bars(
     }
 }
 
+int lidar_square_side(int fb_w, int fb_h) {
+    // 40% of the shorter panel edge.
+    return std::max(1, (std::min(fb_w, fb_h) * 2) / 5);
+}
+
 void blit_fusion(
     std::uint8_t* fb_mem,
     int fb_w,
@@ -227,33 +232,39 @@ void blit_fusion(
     int red_off,
     int green_off,
     int blue_off,
-    const RgbFrame& frame
+    const RgbFrame& frame,
+    int skip_side
 ) {
     const int src_w = frame.width;
     const int src_h = frame.height;
     const std::uint8_t* src = frame.rgb.data();
     const int bytes_pp = bpp / 8;
 
-    const float scale = std::min(
-        static_cast<float>(fb_w) / static_cast<float>(src_w),
-        static_cast<float>(fb_h) / static_cast<float>(src_h)
-    );
-    const int dst_w = std::max(1, static_cast<int>(src_w * scale + 0.5f));
+    // Fill panel width; crop top/bottom if the scaled height overflows.
+    const float scale = static_cast<float>(fb_w) / static_cast<float>(src_w);
+    const int dst_w = fb_w;
     const int dst_h = std::max(1, static_cast<int>(src_h * scale + 0.5f));
-    const int origin_x = (fb_w - dst_w) / 2;
-    const int origin_y = (fb_h - dst_h) / 2;
+    const int origin_x = 0;
+    const int origin_y = (fb_h - dst_h) / 2; // may be negative when cropping
 
     for (int y = 0; y < fb_h; ++y) {
         std::uint8_t* row = fb_mem + static_cast<std::size_t>(y) * line_bytes;
         const int sy_img = y - origin_y;
         for (int x = 0; x < fb_w; ++x) {
+            // Leave the lidar instrument rect alone so it never flashes under video.
+            if (x < skip_side && y < skip_side) {
+                continue;
+            }
+
             const int sx_img = x - origin_x;
             std::uint8_t r = 0;
             std::uint8_t g = 0;
             std::uint8_t b = 0;
             if (sx_img >= 0 && sy_img >= 0 && sx_img < dst_w && sy_img < dst_h) {
                 const int sx = (sx_img * src_w) / dst_w;
-                const int sy = (sy_img * src_h) / dst_h;
+                // Flip vertically: camera stream is mounted upside down on the Pi.
+                const int sy_raw = (sy_img * src_h) / dst_h;
+                const int sy = (src_h - 1) - sy_raw;
                 const int si = (sy * src_w + sx) * 3;
                 r = src[si];
                 g = src[si + 1];
@@ -272,7 +283,7 @@ void blit_fusion(
     }
 }
 
-void blit_lidar_square(
+void blit_lidar_cache(
     std::uint8_t* fb_mem,
     int fb_w,
     int fb_h,
@@ -281,24 +292,11 @@ void blit_lidar_square(
     int red_off,
     int green_off,
     int blue_off,
-    const LidarMapPayload& lidar
+    int side,
+    const std::vector<std::uint8_t>& lidar_rgb
 ) {
-    // Square side = 1/3 of the shorter panel edge, top-left.
-    const int side = std::max(1, std::min(fb_w, fb_h) / 3);
-    std::vector<std::uint8_t> lidar_rgb;
-    LidarMap mapper;
-    if (!mapper.render_hud(lidar, side, lidar_rgb)
+    if (side <= 0
         || static_cast<int>(lidar_rgb.size()) < side * side * 3) {
-        // Opaque placeholder so the slot is still visible if scan is empty.
-        for (int y = 0; y < side; ++y) {
-            for (int x = 0; x < side; ++x) {
-                put_fb_rgb(
-                    fb_mem, fb_w, fb_h, line_bytes, bpp,
-                    red_off, green_off, blue_off,
-                    x, y, 12, 12, 16
-                );
-            }
-        }
         return;
     }
 
@@ -317,7 +315,6 @@ void blit_lidar_square(
         }
     }
 
-    // 1px border so the square reads against the fusion feed.
     for (int i = 0; i < side; ++i) {
         put_fb_rgb(
             fb_mem, fb_w, fb_h, line_bytes, bpp,
@@ -439,11 +436,13 @@ bool DisplayHud::init(int /*width*/, int /*height*/) {
         fb_mem_, fb_w_, fb_h_, fb_line_bytes_, fb_bpp_,
         red_off_, green_off_, blue_off_
     );
+    lidar_side_ = lidar_square_side(fb_w_, fb_h_);
+    lidar_cache_.clear();
     logutil::info(
         std::string("DisplayHud fb ") + opened + " "
         + std::to_string(fb_w_) + "x" + std::to_string(fb_h_)
         + " bpp=" + std::to_string(fb_bpp_)
-        + " lidar_square=" + std::to_string(std::min(fb_w_, fb_h_) / 3)
+        + " lidar_square=" + std::to_string(lidar_side_)
         + "px (test bars drawn; if panel stays dark/desktop, stop the DE)"
     );
     return true;
@@ -462,6 +461,8 @@ void DisplayHud::shutdown() {
     }
     release_vt_graphics();
 #endif
+    lidar_cache_.clear();
+    lidar_side_ = 0;
     enabled = false;
 }
 
@@ -485,17 +486,42 @@ bool DisplayHud::draw(
         return false;
     }
 
-    // Full-panel fusion feed, then lidar instrument square over top-left.
+    if (lidar_side_ <= 0) {
+        lidar_side_ = lidar_square_side(fb_w_, fb_h_);
+    }
+
+    // Refresh cached lidar inset when a new scan arrives.
+    if (lidar_or_null != nullptr) {
+        LidarMap mapper;
+        std::vector<std::uint8_t> rendered;
+        if (mapper.render_hud(*lidar_or_null, lidar_side_, rendered)
+            && static_cast<int>(rendered.size()) >= lidar_side_ * lidar_side_ * 3) {
+            lidar_cache_.swap(rendered);
+        }
+    }
+
+    // Fusion never paints the lidar rect; cache is redrawn every frame on top.
     blit_fusion(
         fb_mem_, fb_w_, fb_h_, fb_line_bytes_, fb_bpp_,
-        red_off_, green_off_, blue_off_, frame
+        red_off_, green_off_, blue_off_, frame, lidar_side_
     );
 
-    if (lidar_or_null != nullptr) {
-        blit_lidar_square(
+    if (!lidar_cache_.empty()) {
+        blit_lidar_cache(
             fb_mem_, fb_w_, fb_h_, fb_line_bytes_, fb_bpp_,
-            red_off_, green_off_, blue_off_, *lidar_or_null
+            red_off_, green_off_, blue_off_, lidar_side_, lidar_cache_
         );
+    } else {
+        // Placeholder until the first scan so the reserved rect is not empty.
+        for (int y = 0; y < lidar_side_; ++y) {
+            for (int x = 0; x < lidar_side_; ++x) {
+                put_fb_rgb(
+                    fb_mem_, fb_w_, fb_h_, fb_line_bytes_, fb_bpp_,
+                    red_off_, green_off_, blue_off_,
+                    x, y, 12, 12, 16
+                );
+            }
+        }
     }
 
     poll_stdin_quit(quit_requested_);

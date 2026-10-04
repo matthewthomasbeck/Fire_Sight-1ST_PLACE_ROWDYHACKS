@@ -3,12 +3,13 @@
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <vector>
 
 #include "vision/CameraFusion.hpp"
 #include "vision/LidarMap.hpp"
 
 // Direct framebuffer HUD (/dev/fb0). No OpenCV, no X11.
-// Layout: full-panel fusion video + top-left lidar square (side = min(w,h)/3).
+// Layout: width-filling fusion (cropped) + top-left lidar square (side = 40% min edge).
 
 struct HudOverlay {
     double lat = 0.0;
@@ -45,4 +46,8 @@ private:
     int green_off_ = 8;
     int blue_off_ = 0;
     bool quit_requested_ = false;
+
+    // Last lidar inset; fusion never paints this rect, so no flash.
+    int lidar_side_ = 0;
+    std::vector<std::uint8_t> lidar_cache_;
 };
