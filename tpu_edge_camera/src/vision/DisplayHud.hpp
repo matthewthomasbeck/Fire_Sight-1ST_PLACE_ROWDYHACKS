@@ -10,6 +10,8 @@
 
 // Direct framebuffer HUD (/dev/fb0). No OpenCV, no X11.
 // Layout: width-filling fusion (cropped) + top-left lidar square (side = 50% min edge).
+// Panel mount is upside down: all fb writes apply a 180 deg rotation (not a mirror).
+// Fusion frame is 90 deg CCW-corrected for the CW camera mount.
 
 struct HudOverlay {
     double lat = 0.0;

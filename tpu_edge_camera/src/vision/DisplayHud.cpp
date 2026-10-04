@@ -235,6 +235,13 @@ const std::uint8_t* glyph8x12(char ch) {
     }
 }
 
+// Panel is mounted upside down: map logical HUD coords to a 180 deg rotation
+// (x,y) -> (w-1-x, h-1-y). That is a rotation, not a mirror.
+inline void panel_map(int fb_w, int fb_h, int x, int y, int* ox, int* oy) {
+    *ox = fb_w - 1 - x;
+    *oy = fb_h - 1 - y;
+}
+
 void put_fb_rgb(
     std::uint8_t* fb_mem,
     int fb_w,
@@ -256,15 +263,18 @@ void put_fb_rgb(
     if (x < 0 || y < 0 || x >= fb_w || y >= fb_h || fb_mem == nullptr) {
         return;
     }
+    int ox = x;
+    int oy = y;
+    panel_map(fb_w, fb_h, x, y, &ox, &oy);
     const int bytes_pp = bpp / 8;
-    std::uint8_t* row = fb_mem + static_cast<std::size_t>(y) * line_bytes;
+    std::uint8_t* row = fb_mem + static_cast<std::size_t>(oy) * line_bytes;
     const std::uint32_t px = pack_pixel(
         bpp, red_off, green_off, blue_off, red_len, green_len, blue_len, r, g, b
     );
     if (bytes_pp == 2) {
-        *reinterpret_cast<std::uint16_t*>(row + x * 2) = static_cast<std::uint16_t>(px);
+        *reinterpret_cast<std::uint16_t*>(row + ox * 2) = static_cast<std::uint16_t>(px);
     } else {
-        *reinterpret_cast<std::uint32_t*>(row + x * 4) = px;
+        *reinterpret_cast<std::uint32_t*>(row + ox * 4) = px;
     }
 }
 
@@ -361,21 +371,24 @@ void draw_test_bars(
 ) {
     const int bytes_pp = bpp / 8;
     for (int y = 0; y < h; ++y) {
-        std::uint8_t* row = mem + static_cast<std::size_t>(y) * line_bytes;
         for (int x = 0; x < w; ++x) {
             const int band = (x * 3) / std::max(1, w);
             const std::uint8_t r = band == 0 ? 255 : 0;
             const std::uint8_t g = band == 1 ? 255 : 0;
             const std::uint8_t b = band == 2 ? 255 : 0;
+            int ox = x;
+            int oy = y;
+            panel_map(w, h, x, y, &ox, &oy);
+            std::uint8_t* row = mem + static_cast<std::size_t>(oy) * line_bytes;
             const std::uint32_t px = pack_pixel(
                 bpp, red_off, green_off, blue_off,
                 red_len, green_len, blue_len, r, g, b
             );
             if (bytes_pp == 2) {
-                *reinterpret_cast<std::uint16_t*>(row + x * 2) =
+                *reinterpret_cast<std::uint16_t*>(row + ox * 2) =
                     static_cast<std::uint16_t>(px);
             } else {
-                *reinterpret_cast<std::uint32_t*>(row + x * 4) = px;
+                *reinterpret_cast<std::uint32_t*>(row + ox * 4) = px;
             }
         }
     }
@@ -418,7 +431,6 @@ void blit_fusion(
     const int origin_y = (fb_h - dst_h) / 2; // may be negative when cropping
 
     for (int y = 0; y < fb_h; ++y) {
-        std::uint8_t* row = fb_mem + static_cast<std::size_t>(y) * line_bytes;
         const int sy_img = y - origin_y;
         for (int x = 0; x < fb_w; ++x) {
             // Leave lidar + GPS overlay rects alone to avoid flash under overlays.
@@ -436,23 +448,28 @@ void blit_fusion(
             std::uint8_t g = 0;
             std::uint8_t b = 0;
             if (sx_img >= 0 && sy_img >= 0 && sx_img < dst_w && sy_img < dst_h) {
-                // Vertical flip (upright) + horizontal flip (undo mirror from mount).
-                const int sx = (src_w - 1) - (sx_img * src_w) / dst_w;
-                const int sy = (src_h - 1) - (sy_img * src_h) / dst_h;
+                // Fusion frame is already 90 deg CCW-corrected; no mirror here.
+                const int sx = (sx_img * src_w) / dst_w;
+                const int sy = (sy_img * src_h) / dst_h;
                 const int si = (sy * src_w + sx) * 3;
                 r = src[si];
                 g = src[si + 1];
                 b = src[si + 2];
             }
+            int ox = x;
+            int oy = y;
+            panel_map(fb_w, fb_h, x, y, &ox, &oy);
+            std::uint8_t* out_row =
+                fb_mem + static_cast<std::size_t>(oy) * line_bytes;
             const std::uint32_t px = pack_pixel(
                 bpp, red_off, green_off, blue_off,
                 red_len, green_len, blue_len, r, g, b
             );
             if (bytes_pp == 2) {
-                *reinterpret_cast<std::uint16_t*>(row + x * 2) =
+                *reinterpret_cast<std::uint16_t*>(out_row + ox * 2) =
                     static_cast<std::uint16_t>(px);
             } else {
-                *reinterpret_cast<std::uint32_t*>(row + x * 4) = px;
+                *reinterpret_cast<std::uint32_t*>(out_row + ox * 4) = px;
             }
         }
     }
@@ -585,8 +602,8 @@ void sample_fusion_pixel(
         *b = 0;
         return;
     }
-    const int sx = (src_w - 1) - (sx_img * src_w) / dst_w;
-    const int sy = (src_h - 1) - (sy_img * src_h) / dst_h;
+    const int sx = (sx_img * src_w) / dst_w;
+    const int sy = (sy_img * src_h) / dst_h;
     const int si = (sy * src_w + sx) * 3;
     *r = src[si];
     *g = src[si + 1];

@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <utility>
 #include <vector>
 
 #define STB_IMAGE_WRITE_IMPLEMENTATION
@@ -355,6 +356,29 @@ bool CameraFusion::render_fusion(
             out.rgb[i + 2] = static_cast<std::uint8_t>(out_b);
         }
     }
+
+    // Camera is mounted 90 deg CW; rotate CCW so HUD and uplink read upright.
+    // Not a mirror: (x,y) <- (y, w-1-x) swapped via sx=w-1-y, sy=x.
+    RgbFrame rotated;
+    rotated.width = out_height;
+    rotated.height = out_width;
+    rotated.rgb.resize(
+        static_cast<std::size_t>(rotated.width * rotated.height * 3)
+    );
+    for (int y = 0; y < rotated.height; ++y) {
+        for (int x = 0; x < rotated.width; ++x) {
+            const int sx = out_width - 1 - y;
+            const int sy = x;
+            const std::size_t si =
+                static_cast<std::size_t>((sy * out_width + sx) * 3);
+            const std::size_t di =
+                static_cast<std::size_t>((y * rotated.width + x) * 3);
+            rotated.rgb[di + 0] = out.rgb[si + 0];
+            rotated.rgb[di + 1] = out.rgb[si + 1];
+            rotated.rgb[di + 2] = out.rgb[si + 2];
+        }
+    }
+    out = std::move(rotated);
     return true;
 }
 

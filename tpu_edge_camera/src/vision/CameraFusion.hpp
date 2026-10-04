@@ -41,6 +41,7 @@ struct CameraFusion {
     bool render_ir(const CameraDriver& camera, RgbFrame& out);
 
     // Predator vision: IR base + thermal tint (FusionScreen math).
+    // Output is rotated 90 deg CCW for the CW camera mount (240x320).
     bool render_fusion(
         const CameraDriver& camera,
         const ThermalDriver& thermal,
