@@ -255,14 +255,27 @@ int main() {
         overlay.gps_valid = gps.last_fix.valid;
         overlay.lat = gps.last_fix.latitude;
         overlay.lon = gps.last_fix.longitude;
+        ++gps_log_count;
         if (gps.last_fix.valid) {
-            ++gps_log_count;
-            if (gps_log_count == 1 || gps_log_count % 100 == 0) {
+            if (gps.rmc_valid == 1 || gps_log_count % 100 == 0) {
                 logutil::info(
                     "gps fix lat=" + std::to_string(gps.last_fix.latitude)
                     + " lon=" + std::to_string(gps.last_fix.longitude)
                 );
             }
+        } else if (gps_log_count == 1 || gps_log_count % 100 == 0) {
+            // HUD UNKNOWN: separate "port dead" vs "UART data but no lock".
+            logutil::warn(
+                std::string("gps no fix")
+                + (gps.demo_mode ? " demo_mode" : " live")
+                + " bytes=" + std::to_string(gps.bytes_read)
+                + " lines=" + std::to_string(gps.lines_seen)
+                + " rmc_a=" + std::to_string(gps.rmc_valid)
+                + " rmc_v=" + std::to_string(gps.rmc_void)
+                + " last_status=" + std::string(1, gps.last_rmc_status)
+                + (gps.last_nmea_tag.empty() ? "" : " last_tag=" + gps.last_nmea_tag)
+                + (gps.last_error[0] ? std::string(" err=") + gps.last_error : "")
+            );
         }
 
         // Drain UART only; heavy JSON/HUD work stays off the critical path.

@@ -85,7 +85,7 @@ std::vector<std::string> split_csv(const std::string& s) {
 }
 
 double nmea_to_degrees(const std::string& raw, const std::string& hemi) {
-    if (raw.empty()) {
+    if (raw.empty() || hemi.empty()) {
         return 0.0;
     }
     const double v = std::strtod(raw.c_str(), nullptr);
@@ -93,10 +93,19 @@ double nmea_to_degrees(const std::string& raw, const std::string& hemi) {
     const int deg = static_cast<int>(abs_v / 100.0);
     const double minutes = abs_v - static_cast<double>(deg) * 100.0;
     double dec = static_cast<double>(deg) + minutes / 60.0;
-    if (!hemi.empty() && (hemi[0] == 'S' || hemi[0] == 'W')) {
+    if (hemi[0] == 'S' || hemi[0] == 'W') {
         dec = -dec;
     }
     return dec;
+}
+
+// Match Vending_Machine_Robot gps.py: any talker ending in RMC ($GPRMC, $GNRMC, ...).
+bool is_rmc_talker(const std::string& talker) {
+    if (talker.size() < 6 || talker[0] != '$') {
+        return false;
+    }
+    const size_t n = talker.size();
+    return talker[n - 3] == 'R' && talker[n - 2] == 'M' && talker[n - 1] == 'C';
 }
 
 } // namespace
@@ -216,6 +225,7 @@ bool GpsDriver::refresh(double max_seconds) {
             break;
         }
 
+        bytes_read += static_cast<std::uint64_t>(n);
         line_buf_.append(chunk, static_cast<size_t>(n));
 
         // Cap runaway buffer if the module spews binary noise.
@@ -233,13 +243,20 @@ bool GpsDriver::refresh(double max_seconds) {
             if (!line.empty() && line.back() == '\r') {
                 line.pop_back();
             }
+            if (line.empty()) {
+                continue;
+            }
+            ++lines_seen;
 
             GpsFix parsed;
             if (parse_gprmc(line, parsed)) {
+                last_rmc_status = parsed.valid ? 'A' : 'V';
                 if (parsed.valid) {
+                    ++rmc_valid;
                     last_fix = parsed;
                 } else {
-                    // Void RMC: keep last lat/lon, clear valid.
+                    ++rmc_void;
+                    // Void RMC: keep last lat/lon, clear valid (HUD shows UNKNOWN).
                     last_fix.valid = false;
                     if (!parsed.utc_time.empty()) {
                         last_fix.utc_time = parsed.utc_time;
@@ -249,6 +266,15 @@ bool GpsDriver::refresh(double max_seconds) {
                     }
                 }
                 last_error[0] = '\0';
+            } else {
+                // Remember non-RMC talker for diagnostics (e.g. GGA-only stream).
+                const auto dollar = line.find('$');
+                if (dollar != std::string::npos) {
+                    const auto comma = line.find(',', dollar);
+                    if (comma != std::string::npos && comma > dollar) {
+                        last_nmea_tag = line.substr(dollar, comma - dollar);
+                    }
+                }
             }
         }
     }
@@ -285,13 +311,13 @@ bool GpsDriver::parse_gprmc(const std::string& line, GpsFix& out) {
     }
 
     const auto fields = split_csv(s);
-    // $GPRMC,time,status,lat,N/S,lon,E/W,speed,course,date,...
+    // $xxRMC,time,status,lat,N/S,lon,E/W,speed,course,date,...
     if (fields.size() < 10) {
         return false;
     }
 
     const std::string& talker = fields[0];
-    if (talker != "$GPRMC" && talker != "$GNRMC") {
+    if (!is_rmc_talker(talker)) {
         return false;
     }
 
@@ -301,6 +327,14 @@ bool GpsDriver::parse_gprmc(const std::string& line, GpsFix& out) {
         out.utc_time = fields[1];
         out.date = fields[9];
         return true; // parsed void fix; caller may keep prior valid coords
+    }
+
+    // Require lat/lon + hemispheres (same as gps.py rejecting None coords).
+    if (fields[3].empty() || fields[4].empty() || fields[5].empty() || fields[6].empty()) {
+        out.valid = false;
+        out.utc_time = fields[1];
+        out.date = fields[9];
+        return true;
     }
 
     out.utc_time = fields[1];
