@@ -39,9 +39,12 @@ body {
 
 /* ---------- frame ---------- */
 
+/* Edge fusion is 240x320 after the CW camera mount correction. */
 .stream__frame {
   position: relative;
-  aspect-ratio: 16 / 9;
+  width: min(100%, 28rem);
+  aspect-ratio: 3 / 4;
+  margin-inline: auto;
   background: var(--navy-deep);
   border: 2px solid var(--navy-line);
   border-radius: 6px;
@@ -50,6 +53,9 @@ body {
 }
 
 .stream__frame:fullscreen {
+  width: auto;
+  height: 100%;
+  aspect-ratio: 3 / 4;
   border: 0;
   border-radius: 0;
 }
@@ -59,8 +65,10 @@ body {
   inset: 0;
   width: 100%;
   height: 100%;
-  object-fit: contain;
+  object-fit: cover;
   background: #000;
+  /* Same upright correction as the HUD blit (180 deg, not a mirror). */
+  transform: rotate(180deg);
 }
 
 .stream__notice {
