@@ -10,11 +10,6 @@ if [[ -f config/edge.env ]]; then
   set +a
 fi
 
-# Touchscreen usually sits on :0 when launching over SSH.
-if [[ -z "${DISPLAY:-}" ]] && [[ -e /tmp/.X11-unix/X0 ]]; then
-  export DISPLAY=:0
-fi
-
 mkdir -p build
 cd build
 cmake ..

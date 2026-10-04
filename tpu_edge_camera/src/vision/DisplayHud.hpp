@@ -1,11 +1,13 @@
 #pragma once
 
+#include <cstddef>
+#include <cstdint>
 #include <string>
 
 #include "vision/CameraFusion.hpp"
 #include "vision/LidarMap.hpp"
 
-// Fullscreen touchscreen HUD via OpenCV (not notcurses).
+// Direct framebuffer HUD (/dev/fb0). No OpenCV, no X11.
 
 struct HudOverlay {
     double lat = 0.0;
@@ -18,6 +20,7 @@ struct HudOverlay {
 struct DisplayHud {
     bool enabled = true;
 
+    // width/height ignored; panel size comes from the framebuffer.
     bool init(int width, int height);
     void shutdown();
 
@@ -30,7 +33,15 @@ struct DisplayHud {
     bool poll_quit();
 
 private:
-    int window_w_ = 800;
-    int window_h_ = 480;
+    int fb_fd_ = -1;
+    std::uint8_t* fb_mem_ = nullptr;
+    std::size_t fb_map_len_ = 0;
+    int fb_w_ = 0;
+    int fb_h_ = 0;
+    int fb_bpp_ = 0;
+    int fb_line_bytes_ = 0;
+    int red_off_ = 16;
+    int green_off_ = 8;
+    int blue_off_ = 0;
     bool quit_requested_ = false;
 };
