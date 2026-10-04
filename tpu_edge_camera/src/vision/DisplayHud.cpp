@@ -382,9 +382,9 @@ bool DisplayHud::draw(
         }
     }
 
-    // Bottom-right polar inset from LD19 scan (same palette as LidarScreen).
+    // Small bottom-right lidar inset. Keep this cheap; fusion blit is the priority.
     if (lidar_or_null != nullptr) {
-        const int inset = std::clamp(std::min(fb_w_, fb_h_) / 3, 96, 220);
+        const int inset = std::clamp(std::min(fb_w_, fb_h_) / 4, 72, 140);
         std::vector<std::uint8_t> lidar_rgb;
         LidarMap mapper;
         if (mapper.render_hud(*lidar_or_null, inset, lidar_rgb)

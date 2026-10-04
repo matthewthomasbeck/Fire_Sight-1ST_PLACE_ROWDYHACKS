@@ -217,6 +217,8 @@ int main() {
     HudOverlay overlay;
     LidarMapPayload lidar_payload;
     auto last_loop = std::chrono::steady_clock::now();
+    auto last_lidar_json = std::chrono::steady_clock::now()
+        - std::chrono::seconds(1);
     int gps_log_count = 0;
     int lidar_log_count = 0;
 
@@ -261,8 +263,18 @@ int main() {
             }
         }
 
+        // Drain UART only; heavy JSON/HUD work stays off the critical path.
         lidar.refresh();
+
+        if (!fusion.render_fusion(camera, thermal, frame)) {
+            logutil::warn("render_fusion failed");
+            sleep_for_fps(cfg.target_fps);
+            continue;
+        }
+
+        // Snapshot after fusion so the panel always gets a fresh IR frame first.
         const LidarMapPayload* lidar_for_hud = nullptr;
+        const auto now_lidar = std::chrono::steady_clock::now();
         if (lidar_map.snapshot(lidar, lidar_payload)) {
             lidar_for_hud = &lidar_payload;
             ++lidar_log_count;
@@ -276,25 +288,22 @@ int main() {
                     + (lidar.port_path[0] ? std::string(" path=") + lidar.port_path : "")
                 );
             }
-
-            if (cfg.uplink_enabled) {
-                std::string json;
-                if (lidar_map.to_json(lidar_payload, cfg.lidar_id, json)) {
-                    std::lock_guard<std::mutex> lock(lidar_mu);
-                    lidar_json.swap(json);
-                    lidar_has_scan = true;
-                }
-            }
-        }
-
-        if (!fusion.render_fusion(camera, thermal, frame)) {
-            logutil::warn("render_fusion failed");
-            sleep_for_fps(cfg.target_fps);
-            continue;
         }
 
         if (hud.enabled) {
             hud.draw(frame, lidar_for_hud, overlay);
+        }
+
+        // Build lidar JSON at ~2 Hz after HUD blit so uplink cannot stall video.
+        if (cfg.uplink_enabled && lidar_for_hud != nullptr
+            && now_lidar - last_lidar_json >= std::chrono::milliseconds(500)) {
+            std::string json;
+            if (lidar_map.to_json(lidar_payload, cfg.lidar_id, json)) {
+                std::lock_guard<std::mutex> lock(lidar_mu);
+                lidar_json.swap(json);
+                lidar_has_scan = true;
+            }
+            last_lidar_json = now_lidar;
         }
 
         if (cfg.uplink_enabled) {
