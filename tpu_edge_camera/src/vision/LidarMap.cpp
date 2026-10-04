@@ -125,9 +125,10 @@ bool LidarMap::render_hud(
         const float deg = static_cast<float>(bin) * 0.5f;
         const float rad = deg * 0.01745329252f;
         const float rn = std::clamp(static_cast<float>(hit_mm) / range_mm, 0.0f, 1.0f);
-        // 0 deg = up, clockwise (sin x, -cos y), matching LD19 / LidarScreen.
+        // Vertical flip only (no left/right mirror): 0 deg maps toward bottom of
+        // the square so a roof-mounted LD19 reads upright on the panel.
         const int x = static_cast<int>(cx + radius * rn * std::sin(rad) + 0.5f);
-        const int y = static_cast<int>(cy - radius * rn * std::cos(rad) + 0.5f);
+        const int y = static_cast<int>(cy + radius * rn * std::cos(rad) + 0.5f);
 
         const float nearness = 1.0f - rn;
         const float bright = 0.40f + 0.60f * (static_cast<float>(intens) / 255.0f);

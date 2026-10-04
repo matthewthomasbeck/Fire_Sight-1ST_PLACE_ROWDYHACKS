@@ -219,8 +219,8 @@ void draw_test_bars(
 }
 
 int lidar_square_side(int fb_w, int fb_h) {
-    // 40% of the shorter panel edge.
-    return std::max(1, (std::min(fb_w, fb_h) * 2) / 5);
+    // ~66% of the shorter panel edge.
+    return std::max(1, (std::min(fb_w, fb_h) * 2) / 3);
 }
 
 void blit_fusion(
@@ -261,10 +261,9 @@ void blit_fusion(
             std::uint8_t g = 0;
             std::uint8_t b = 0;
             if (sx_img >= 0 && sy_img >= 0 && sx_img < dst_w && sy_img < dst_h) {
-                const int sx = (sx_img * src_w) / dst_w;
-                // Flip vertically: camera stream is mounted upside down on the Pi.
-                const int sy_raw = (sy_img * src_h) / dst_h;
-                const int sy = (src_h - 1) - sy_raw;
+                // Vertical flip (upright) + horizontal flip (undo mirror from mount).
+                const int sx = (src_w - 1) - (sx_img * src_w) / dst_w;
+                const int sy = (src_h - 1) - (sy_img * src_h) / dst_h;
                 const int si = (sy * src_w + sx) * 3;
                 r = src[si];
                 g = src[si + 1];
