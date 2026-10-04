@@ -42,9 +42,12 @@ private:
     int fb_h_ = 0;
     int fb_bpp_ = 0;
     int fb_line_bytes_ = 0;
-    int red_off_ = 16;
-    int green_off_ = 8;
+    int red_off_ = 11;
+    int green_off_ = 5;
     int blue_off_ = 0;
+    int red_len_ = 5;
+    int green_len_ = 6;
+    int blue_len_ = 5;
     bool quit_requested_ = false;
 
     // Last lidar inset; fusion never paints this rect, so no flash.

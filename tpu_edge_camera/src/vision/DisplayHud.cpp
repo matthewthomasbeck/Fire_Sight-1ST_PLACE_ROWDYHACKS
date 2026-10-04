@@ -35,18 +35,36 @@ inline std::uint32_t pack_pixel(
     int red_off,
     int green_off,
     int blue_off,
+    int red_len,
+    int green_len,
+    int blue_len,
     std::uint8_t r,
     std::uint8_t g,
     std::uint8_t b
 ) {
-    if (bpp == 16) {
-        return static_cast<std::uint32_t>(
-            ((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3)
-        );
+    (void)bpp;
+    const int r_shift = std::max(0, 8 - std::max(1, red_len));
+    const int g_shift = std::max(0, 8 - std::max(1, green_len));
+    const int b_shift = std::max(0, 8 - std::max(1, blue_len));
+    return (static_cast<std::uint32_t>(r >> r_shift) << red_off)
+        | (static_cast<std::uint32_t>(g >> g_shift) << green_off)
+        | (static_cast<std::uint32_t>(b >> b_shift) << blue_off);
+}
+
+void flush_fb(int fb_fd, std::uint8_t* mem, std::size_t len) {
+    if (mem != nullptr && len > 0) {
+        (void)msync(mem, len, MS_SYNC);
     }
-    return (static_cast<std::uint32_t>(r) << red_off)
-        | (static_cast<std::uint32_t>(g) << green_off)
-        | (static_cast<std::uint32_t>(b) << blue_off);
+    if (fb_fd < 0) {
+        return;
+    }
+    fb_var_screeninfo vinfo{};
+    if (ioctl(fb_fd, FBIOGET_VSCREENINFO, &vinfo) != 0) {
+        return;
+    }
+    vinfo.xoffset = 0;
+    vinfo.yoffset = 0;
+    (void)ioctl(fb_fd, FBIOPAN_DISPLAY, &vinfo);
 }
 
 void poll_stdin_quit(bool& quit_requested) {
@@ -226,6 +244,9 @@ void put_fb_rgb(
     int red_off,
     int green_off,
     int blue_off,
+    int red_len,
+    int green_len,
+    int blue_len,
     int x,
     int y,
     std::uint8_t r,
@@ -237,7 +258,9 @@ void put_fb_rgb(
     }
     const int bytes_pp = bpp / 8;
     std::uint8_t* row = fb_mem + static_cast<std::size_t>(y) * line_bytes;
-    const std::uint32_t px = pack_pixel(bpp, red_off, green_off, blue_off, r, g, b);
+    const std::uint32_t px = pack_pixel(
+        bpp, red_off, green_off, blue_off, red_len, green_len, blue_len, r, g, b
+    );
     if (bytes_pp == 2) {
         *reinterpret_cast<std::uint16_t*>(row + x * 2) = static_cast<std::uint16_t>(px);
     } else {
@@ -246,7 +269,7 @@ void put_fb_rgb(
 }
 
 // Take over a text VT so /dev/fb0 actually paints the DSI panel.
-// From SSH this needs root (or tty group) and the desktop must be stopped.
+// From SSH this needs root; compile_and_run stops the desktop first.
 bool claim_vt_graphics() {
     int vt_no = 0;
     if (const char* env = std::getenv("HUD_VT")) {
@@ -265,8 +288,7 @@ bool claim_vt_graphics() {
             logutil::warn(
                 std::string("DisplayHud: cannot open console (")
                 + std::strerror(errno)
-                + "). From SSH run: sudo ./compile_and_run   "
-                  "and stop the desktop (sudo systemctl stop lightdm)"
+                + "). From SSH run: sudo ./compile_and_run"
             );
             return false;
         }
@@ -290,7 +312,7 @@ bool claim_vt_graphics() {
         logutil::warn(
             std::string("DisplayHud: KDSETMODE GRAPHICS failed: ")
             + std::strerror(errno)
-            + " (desktop may own the panel)"
+            + " (desktop may still own DRM; rerun sudo ./compile_and_run)"
         );
     } else {
         logutil::info("DisplayHud console in KD_GRAPHICS");
@@ -332,7 +354,10 @@ void draw_test_bars(
     int bpp,
     int red_off,
     int green_off,
-    int blue_off
+    int blue_off,
+    int red_len,
+    int green_len,
+    int blue_len
 ) {
     const int bytes_pp = bpp / 8;
     for (int y = 0; y < h; ++y) {
@@ -343,7 +368,8 @@ void draw_test_bars(
             const std::uint8_t g = band == 1 ? 255 : 0;
             const std::uint8_t b = band == 2 ? 255 : 0;
             const std::uint32_t px = pack_pixel(
-                bpp, red_off, green_off, blue_off, r, g, b
+                bpp, red_off, green_off, blue_off,
+                red_len, green_len, blue_len, r, g, b
             );
             if (bytes_pp == 2) {
                 *reinterpret_cast<std::uint16_t*>(row + x * 2) =
@@ -369,6 +395,9 @@ void blit_fusion(
     int red_off,
     int green_off,
     int blue_off,
+    int red_len,
+    int green_len,
+    int blue_len,
     const RgbFrame& frame,
     int skip_side,
     int skip_gps_x,
@@ -416,7 +445,8 @@ void blit_fusion(
                 b = src[si + 2];
             }
             const std::uint32_t px = pack_pixel(
-                bpp, red_off, green_off, blue_off, r, g, b
+                bpp, red_off, green_off, blue_off,
+                red_len, green_len, blue_len, r, g, b
             );
             if (bytes_pp == 2) {
                 *reinterpret_cast<std::uint16_t*>(row + x * 2) =
@@ -648,6 +678,9 @@ void blit_rgb_box(
     int red_off,
     int green_off,
     int blue_off,
+    int red_len,
+    int green_len,
+    int blue_len,
     int box_x,
     int box_y,
     int box_w,
@@ -663,7 +696,7 @@ void blit_rgb_box(
             const int si = (y * box_w + x) * 3;
             put_fb_rgb(
                 fb_mem, fb_w, fb_h, line_bytes, bpp,
-                red_off, green_off, blue_off,
+                red_off, green_off, blue_off, red_len, green_len, blue_len,
                 box_x + x,
                 box_y + y,
                 rgb[static_cast<size_t>(si)],
@@ -683,6 +716,9 @@ void blit_lidar_cache(
     int red_off,
     int green_off,
     int blue_off,
+    int red_len,
+    int green_len,
+    int blue_len,
     int side,
     const std::vector<std::uint8_t>& lidar_rgb
 ) {
@@ -696,7 +732,7 @@ void blit_lidar_cache(
             const int si = (y * side + x) * 3;
             put_fb_rgb(
                 fb_mem, fb_w, fb_h, line_bytes, bpp,
-                red_off, green_off, blue_off,
+                red_off, green_off, blue_off, red_len, green_len, blue_len,
                 x,
                 y,
                 lidar_rgb[static_cast<size_t>(si)],
@@ -709,19 +745,23 @@ void blit_lidar_cache(
     for (int i = 0; i < side; ++i) {
         put_fb_rgb(
             fb_mem, fb_w, fb_h, line_bytes, bpp,
-            red_off, green_off, blue_off, i, 0, 180, 180, 190
+            red_off, green_off, blue_off, red_len, green_len, blue_len,
+            i, 0, 180, 180, 190
         );
         put_fb_rgb(
             fb_mem, fb_w, fb_h, line_bytes, bpp,
-            red_off, green_off, blue_off, i, side - 1, 180, 180, 190
+            red_off, green_off, blue_off, red_len, green_len, blue_len,
+            i, side - 1, 180, 180, 190
         );
         put_fb_rgb(
             fb_mem, fb_w, fb_h, line_bytes, bpp,
-            red_off, green_off, blue_off, 0, i, 180, 180, 190
+            red_off, green_off, blue_off, red_len, green_len, blue_len,
+            0, i, 180, 180, 190
         );
         put_fb_rgb(
             fb_mem, fb_w, fb_h, line_bytes, bpp,
-            red_off, green_off, blue_off, side - 1, i, 180, 180, 190
+            red_off, green_off, blue_off, red_len, green_len, blue_len,
+            side - 1, i, 180, 180, 190
         );
     }
 }
@@ -775,6 +815,18 @@ bool DisplayHud::init(int /*width*/, int /*height*/) {
         red_off_ = static_cast<int>(vinfo.red.offset);
         green_off_ = static_cast<int>(vinfo.green.offset);
         blue_off_ = static_cast<int>(vinfo.blue.offset);
+        red_len_ = static_cast<int>(vinfo.red.length);
+        green_len_ = static_cast<int>(vinfo.green.length);
+        blue_len_ = static_cast<int>(vinfo.blue.length);
+        if (red_len_ <= 0) {
+            red_len_ = fb_bpp_ == 16 ? 5 : 8;
+        }
+        if (green_len_ <= 0) {
+            green_len_ = fb_bpp_ == 16 ? 6 : 8;
+        }
+        if (blue_len_ <= 0) {
+            blue_len_ = fb_bpp_ == 16 ? 5 : 8;
+        }
 
         if (fb_bpp_ != 16 && fb_bpp_ != 32) {
             logutil::warn(
@@ -792,6 +844,17 @@ bool DisplayHud::init(int /*width*/, int /*height*/) {
             fb_fd_ = -1;
             continue;
         }
+
+        // Force the visible pan to the primary buffer so mmap writes show up.
+        vinfo.xoffset = 0;
+        vinfo.yoffset = 0;
+        if (ioctl(fb_fd_, FBIOPUT_VSCREENINFO, &vinfo) != 0) {
+            logutil::warn(
+                std::string("DisplayHud: FBIOPUT_VSCREENINFO failed: ")
+                + std::strerror(errno)
+            );
+        }
+        (void)ioctl(fb_fd_, FBIOPAN_DISPLAY, &vinfo);
 
         fb_map_len_ = finfo.smem_len;
         fb_mem_ = static_cast<std::uint8_t*>(
@@ -814,8 +877,8 @@ bool DisplayHud::init(int /*width*/, int /*height*/) {
     if (fb_mem_ == nullptr || fb_fd_ < 0) {
         logutil::warn(
             "DisplayHud: no usable framebuffer. "
-            "User needs video group + console VT. "
-            "From SSH: sudo systemctl stop lightdm; sudo ./compile_and_run"
+            "From SSH: sudo ./compile_and_run "
+            "(stops the desktop automatically)"
         );
         release_vt_graphics();
         enabled = false;
@@ -825,8 +888,9 @@ bool DisplayHud::init(int /*width*/, int /*height*/) {
     // RGB test bars so a blank panel is distinguishable from "not drawing".
     draw_test_bars(
         fb_mem_, fb_w_, fb_h_, fb_line_bytes_, fb_bpp_,
-        red_off_, green_off_, blue_off_
+        red_off_, green_off_, blue_off_, red_len_, green_len_, blue_len_
     );
+    flush_fb(fb_fd_, fb_mem_, fb_map_len_);
     lidar_side_ = lidar_square_side(fb_w_, fb_h_);
     lidar_cache_.clear();
     gps_cache_.clear();
@@ -836,7 +900,7 @@ bool DisplayHud::init(int /*width*/, int /*height*/) {
         + std::to_string(fb_w_) + "x" + std::to_string(fb_h_)
         + " bpp=" + std::to_string(fb_bpp_)
         + " lidar_square=" + std::to_string(lidar_side_)
-        + "px (test bars drawn; if panel stays dark/desktop, stop the DE)"
+        + "px (test bars flushed; if panel still dark, desktop still owns DRM)"
     );
     return true;
 #endif
@@ -912,14 +976,16 @@ bool DisplayHud::draw(
     // Fusion skips lidar + GPS rects; overlays are copied as finished tiles.
     blit_fusion(
         fb_mem_, fb_w_, fb_h_, fb_line_bytes_, fb_bpp_,
-        red_off_, green_off_, blue_off_, frame, lidar_side_,
+        red_off_, green_off_, blue_off_, red_len_, green_len_, blue_len_,
+        frame, lidar_side_,
         gps_box_x_, gps_box_y_, gps_box_w_, gps_box_h_
     );
 
     if (!lidar_cache_.empty()) {
         blit_lidar_cache(
             fb_mem_, fb_w_, fb_h_, fb_line_bytes_, fb_bpp_,
-            red_off_, green_off_, blue_off_, lidar_side_, lidar_cache_
+            red_off_, green_off_, blue_off_, red_len_, green_len_, blue_len_,
+            lidar_side_, lidar_cache_
         );
     } else {
         for (int y = 0; y < lidar_side_; ++y) {
@@ -927,6 +993,7 @@ bool DisplayHud::draw(
                 put_fb_rgb(
                     fb_mem_, fb_w_, fb_h_, fb_line_bytes_, fb_bpp_,
                     red_off_, green_off_, blue_off_,
+                    red_len_, green_len_, blue_len_,
                     x, y, 12, 12, 16
                 );
             }
@@ -935,10 +1002,11 @@ bool DisplayHud::draw(
 
     blit_rgb_box(
         fb_mem_, fb_w_, fb_h_, fb_line_bytes_, fb_bpp_,
-        red_off_, green_off_, blue_off_,
+        red_off_, green_off_, blue_off_, red_len_, green_len_, blue_len_,
         gps_box_x_, gps_box_y_, gps_box_w_, gps_box_h_, gps_cache_
     );
 
+    flush_fb(fb_fd_, fb_mem_, fb_map_len_);
     poll_stdin_quit(quit_requested_);
     return true;
 #endif

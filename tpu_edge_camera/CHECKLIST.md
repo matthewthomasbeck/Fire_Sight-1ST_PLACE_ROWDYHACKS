@@ -42,14 +42,17 @@ tpu_edge_camera/
 
 ## HUD from SSH
 
-Framebuffer blit cannot win against a desktop compositor:
+Framebuffer blit cannot win against a desktop compositor. `sudo ./compile_and_run`
+stops LightDM / graphical.target automatically when HUD is enabled:
 
 ```bash
-sudo systemctl stop lightdm   # or gdm3 / sddm
 sudo ./compile_and_run
 ```
 
-Expect log lines `DisplayHud claimed VT2`, `KD_GRAPHICS`, and RGB test bars on the panel at startup. If bars never appear, the DE still owns the display. For uplink-only: `HUD_ENABLED=false`.
+Expect log lines `HUD: releasing DSI panel`, `DisplayHud claimed VT2`, `KD_GRAPHICS`,
+and RGB test bars on the panel at startup. If bars never appear, set
+`HUD_KEEP_DESKTOP=0` (default) and confirm no compositor still holds DRM.
+For uplink-only: `HUD_ENABLED=false`.
 
 ## Sensor notes
 

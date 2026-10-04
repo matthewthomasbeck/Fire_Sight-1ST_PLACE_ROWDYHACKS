@@ -26,14 +26,59 @@ if ! pkg-config --exists libcamera 2>/dev/null; then
   echo "  On Raspberry Pi OS Bookworm: sudo apt install libcamera-dev" >&2
 fi
 
-# Framebuffer HUD cannot beat a running desktop compositor from SSH.
-if [[ "${HUD_ENABLED:-true}" == "true" || "${HUD_ENABLED:-1}" == "1" ]]; then
-  if [[ -n "${SSH_CONNECTION:-}" || -n "${SSH_TTY:-}" ]]; then
-    echo "note: SSH session detected." >&2
-    echo "  For the DSI panel to show video, stop the desktop then rerun with sudo:" >&2
-    echo "    sudo systemctl stop lightdm   # or: gdm3 / sddm / labwc session" >&2
-    echo "    sudo ./compile_and_run" >&2
-    echo "  Or set HUD_ENABLED=false for headless uplink-only." >&2
+hud_on=false
+case "${HUD_ENABLED:-true}" in
+  true|TRUE|1|yes|YES) hud_on=true ;;
+esac
+
+# Framebuffer HUD loses to any running compositor (lightdm / labwc / wayfire).
+# sudo alone is not enough; DRM master must be released first.
+stop_desktop_for_hud() {
+  local vt="${HUD_VT:-2}"
+  echo "HUD: releasing DSI panel from the desktop (vt${vt})..." >&2
+
+  for unit in lightdm gdm3 gdm sddm ly greetd; do
+    if systemctl is-active --quiet "$unit" 2>/dev/null; then
+      echo "HUD: stopping ${unit}" >&2
+      systemctl stop "$unit" 2>/dev/null || true
+    fi
+  done
+
+  # Bookworm Wayland sessions often sit on graphical.target without a classic DM.
+  if systemctl is-active --quiet graphical.target 2>/dev/null; then
+    echo "HUD: isolating multi-user.target (kills labwc/wayfire compositor)" >&2
+    systemctl isolate multi-user.target 2>/dev/null || true
+    sleep 1
+  fi
+
+  if command -v chvt >/dev/null 2>&1; then
+    chvt "$vt" 2>/dev/null || true
+  fi
+
+  # Unblank fb sysfs if present.
+  for blank in /sys/class/graphics/fb0/blank /sys/class/graphics/fb1/blank; do
+    if [[ -w "$blank" ]]; then
+      echo 0 >"$blank" 2>/dev/null || true
+    fi
+  done
+}
+
+if [[ "$hud_on" == true ]]; then
+  # Only enforce on a real Pi panel; keep macOS/desktop builds usable.
+  if [[ -e /dev/fb0 || -e /dev/fb1 ]]; then
+    if [[ "$(id -u)" -ne 0 ]]; then
+      echo "error: HUD needs root to claim the 3.5in DSI panel." >&2
+      echo "  From SSH:" >&2
+      echo "    sudo ./compile_and_run" >&2
+      echo "  (this script stops the desktop automatically when run as root)" >&2
+      echo "  Or set HUD_ENABLED=false for headless uplink-only." >&2
+      exit 1
+    fi
+    if [[ "${HUD_KEEP_DESKTOP:-0}" != "1" ]]; then
+      stop_desktop_for_hud
+    else
+      echo "warning: HUD_KEEP_DESKTOP=1; panel may stay blank if a compositor owns DRM" >&2
+    fi
   fi
 fi
 
