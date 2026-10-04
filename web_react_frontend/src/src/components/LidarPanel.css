@@ -2,27 +2,12 @@
   display: flex;
   flex-direction: column;
   gap: 0.65rem;
-  width: var(--lidar-size, 28rem);
-  box-sizing: border-box;
 }
 
 .lidar__frame {
-  position: relative;
-  width: var(--lidar-size, 28rem);
-  height: var(--lidar-size, 28rem);
-  box-sizing: border-box;
   background: var(--navy-deep);
   border: 2px solid var(--navy-line);
   border-radius: 6px;
-  overflow: hidden;
-}
-
-.lidar__canvas {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  image-rendering: pixelated;
 }
 
 .lidar__notice {
@@ -33,6 +18,7 @@
   justify-content: center;
   padding: 1.25rem;
   background: rgba(7, 22, 41, 0.88);
+  z-index: 1;
 }
 
 .lidar__notice h2 {
@@ -52,6 +38,7 @@
   position: absolute;
   top: 0.75rem;
   left: 0.75rem;
+  z-index: 2;
   display: flex;
   align-items: center;
   gap: 0.5rem;
@@ -88,16 +75,4 @@
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-}
-
-@media (max-width: 900px) {
-  .lidar {
-    width: min(100%, 22rem);
-  }
-
-  .lidar__frame {
-    width: min(100%, 22rem);
-    height: min(100%, 22rem);
-    aspect-ratio: 1;
-  }
 }

@@ -1,28 +1,9 @@
 .watch {
-  --panel-h: min(70vh, 32rem);
-  --lidar-size: var(--panel-h);
   width: 100%;
 }
 
 .watch__panels {
-  display: grid;
-  grid-template-columns: calc(var(--panel-h) * 3 / 4) var(--lidar-size);
-  justify-content: center;
-  align-items: start;
-  gap: 1rem;
   width: 100%;
-}
-
-.watch__video {
-  width: calc(var(--panel-h) * 3 / 4);
-  max-width: 100%;
-}
-
-.watch__video .stream__frame {
-  width: 100%;
-  height: var(--panel-h);
-  aspect-ratio: auto;
-  margin-inline: 0;
 }
 
 .watch__video .stream__controls {
@@ -31,21 +12,4 @@
 
 .watch__video .stream__actions {
   justify-content: center;
-}
-
-@media (max-width: 900px) {
-  .watch__panels {
-    grid-template-columns: 1fr;
-    justify-items: center;
-  }
-
-  .watch__video {
-    width: min(100%, 22rem);
-  }
-
-  .watch__video .stream__frame {
-    width: 100%;
-    height: auto;
-    aspect-ratio: 3 / 4;
-  }
 }

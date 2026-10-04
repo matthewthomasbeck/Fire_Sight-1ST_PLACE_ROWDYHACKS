@@ -45,7 +45,7 @@ const STATUS_TEXT = {
 };
 
 // Shows one stream from the list. Supports MJPEG http(s) and WebSocket urls.
-export default function StreamPlayer({ url }) {
+export default function StreamPlayer({ url, frameWidth, frameHeight }) {
   const [status, setStatus] = useState("connecting");
   const [attempt, setAttempt] = useState(0);
   const [fps, setFps] = useState(0);
@@ -169,9 +169,20 @@ export default function StreamPlayer({ url }) {
     else frameRef.current?.requestFullscreen?.();
   };
 
+  const frameStyle =
+    frameWidth && frameHeight
+      ? {
+          width: frameWidth,
+          height: frameHeight,
+          maxWidth: "100%",
+          aspectRatio: "auto",
+          marginInline: 0,
+        }
+      : undefined;
+
   return (
     <section className="stream">
-      <div className="stream__frame" ref={frameRef}>
+      <div className="stream__frame" ref={frameRef} style={frameStyle}>
         <img ref={imgRef} className="stream__media" alt="Live stream" />
 
         {status !== "live" && (

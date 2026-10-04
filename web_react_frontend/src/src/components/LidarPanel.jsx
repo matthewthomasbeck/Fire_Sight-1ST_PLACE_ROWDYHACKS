@@ -4,6 +4,7 @@ import "./LidarPanel.css";
 
 const POLL_MS = 500;
 const RANGE_MM = 2000;
+const DEFAULT_SIZE = 480;
 
 function paintScan(canvas, scan) {
   const ctx = canvas.getContext("2d");
@@ -89,10 +90,11 @@ function paintScan(canvas, scan) {
   ctx.putImageData(img, 0, 0);
 }
 
-export default function LidarPanel({ lidarId }) {
+export default function LidarPanel({ lidarId, size = DEFAULT_SIZE }) {
   const canvasRef = useRef(null);
   const [status, setStatus] = useState("connecting");
   const [meta, setMeta] = useState({ bins: 0, speed: 0 });
+  const px = Number(size) || DEFAULT_SIZE;
 
   useEffect(() => {
     if (!lidarId) return undefined;
@@ -145,16 +147,38 @@ export default function LidarPanel({ lidarId }) {
           : "Connecting";
 
   return (
-    <section className="lidar" aria-label="Lidar scan">
+    <section
+      className="lidar"
+      aria-label="Lidar scan"
+      style={{ width: px, flex: "0 0 auto" }}
+    >
       <div
         className="lidar__frame"
-        style={{ width: 360, height: 360, minWidth: 360, minHeight: 360 }}
+        style={{
+          width: px,
+          height: px,
+          minWidth: px,
+          minHeight: px,
+          maxWidth: px,
+          maxHeight: px,
+          boxSizing: "border-box",
+          position: "relative",
+          overflow: "hidden",
+        }}
       >
         <canvas
           ref={canvasRef}
           className="lidar__canvas"
-          width={360}
-          height={360}
+          width={px}
+          height={px}
+          style={{
+            position: "absolute",
+            top: 0,
+            left: 0,
+            width: px,
+            height: px,
+            display: "block",
+          }}
         />
         {status !== "live" && (
           <div className="lidar__notice">
