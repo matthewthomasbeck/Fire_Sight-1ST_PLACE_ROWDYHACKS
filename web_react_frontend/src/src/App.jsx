@@ -3,9 +3,11 @@ import StreamPlayer from "./components/StreamPlayer";
 import LoginPage from "./components/LoginPage";
 import { getSession, signOut } from "./auth";
 
-// Vite reads this from .env. On Create React App, use
-// process.env.REACT_APP_STREAM_URL instead.
-const DEFAULT_STREAM_URL = import.meta.env.VITE_STREAM_URL || "";
+// Vite reads these from .env. Prefer full JPEG poll URL; fall back to API base.
+const API_BASE = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
+const DEFAULT_STREAM_URL =
+  import.meta.env.VITE_STREAM_URL ||
+  (API_BASE ? `${API_BASE}/api/v1/streams/stream_1/jpeg` : "");
 
 export default function App() {
   const [session, setSession] = useState(getSession);

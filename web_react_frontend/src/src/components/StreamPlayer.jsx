@@ -32,11 +32,25 @@ function textToSrc(text) {
 }
 
 function isHttpUrl(url) {
-  return /^https?:\/\//i.test(url);
+  // Absolute http(s), or same-origin path (e.g. /api/v1/streams/stream_1/jpeg)
+  return /^https?:\/\//i.test(url) || url.startsWith("/");
 }
 
 function isWsUrl(url) {
   return /^wss?:\/\//i.test(url);
+}
+
+function pollUrl(url) {
+  const sep = url.includes("?") ? "&" : "?";
+  return `${url}${sep}t=${Date.now()}`;
+}
+
+function initialUrl(defaultUrl) {
+  const saved = readSaved();
+  if (!saved) return defaultUrl;
+  // Drop legacy raw-WS bookmarks once an HTTP JPEG poll default exists.
+  if (defaultUrl && isWsUrl(saved) && isHttpUrl(defaultUrl)) return defaultUrl;
+  return saved;
 }
 
 const STATUS_TEXT = {
@@ -49,7 +63,7 @@ const STATUS_TEXT = {
 };
 
 export default function StreamPlayer({ defaultUrl = "" }) {
-  const [url, setUrl] = useState(() => readSaved() || defaultUrl);
+  const [url, setUrl] = useState(() => initialUrl(defaultUrl));
   const [draft, setDraft] = useState(url);
   const [status, setStatus] = useState(url ? "connecting" : "idle");
   const [attempt, setAttempt] = useState(0);
@@ -99,7 +113,7 @@ export default function StreamPlayer({ defaultUrl = "" }) {
       const tick = async () => {
         if (stopped) return;
         try {
-          const res = await fetch(`${url}${url.includes("?") ? "&" : "?"}t=${Date.now()}`, {
+          const res = await fetch(pollUrl(url), {
             cache: "no-store",
           });
           if (res.status === 204) {

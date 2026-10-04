@@ -3,9 +3,9 @@ services:
     build:
       context: .
       args:
-        VITE_STREAM_URL: ${VITE_STREAM_URL:-}
+        VITE_STREAM_URL: ${VITE_STREAM_URL:-/api/v1/streams/stream_1/jpeg}
         VITE_LOGIN_URL: ${VITE_LOGIN_URL:-}
-        VITE_DEMO_USER: ${VITE_DEMO_USER:-}
-        VITE_DEMO_PASSWORD: ${VITE_DEMO_PASSWORD:-}
+        VITE_DEMO_USER: ${VITE_DEMO_USER:-rowdy}
+        VITE_DEMO_PASSWORD: ${VITE_DEMO_PASSWORD:-change-me}
     ports:
       - "8080:80"
