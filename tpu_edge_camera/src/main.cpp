@@ -59,6 +59,14 @@ int main() {
         logutil::error("thermal init failed");
         return 1;
     }
+
+    // Claim the panel before UART sensors so a serial hang cannot block HUD.
+    hud.enabled = cfg.hud_enabled;
+    if (!hud.init(0, 0)) {
+        logutil::warn("HUD init failed; continuing headless");
+        hud.enabled = false;
+    }
+
     if (!gps.init(cfg.gps_serial_path, cfg.gps_baud)) {
         logutil::warn("gps init failed; continuing without GPS");
     }
@@ -67,12 +75,6 @@ int main() {
     }
     lidar_map.init();
     fusion.init();
-
-    hud.enabled = cfg.hud_enabled;
-    if (!hud.init(0, 0)) {
-        logutil::warn("HUD init failed; continuing headless");
-        hud.enabled = false;
-    }
 
     if (cfg.uplink_enabled && !uplink.connect_or_healthcheck()) {
         logutil::warn("continuing without initial health ok");

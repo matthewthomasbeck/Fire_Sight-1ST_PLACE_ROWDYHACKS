@@ -80,6 +80,34 @@ bool env_truthy(const char* key) {
     return std::string(v) == "1" || std::string(v) == "true" || std::string(v) == "TRUE";
 }
 
+void put_fb_rgb(
+    std::uint8_t* fb_mem,
+    int fb_w,
+    int fb_h,
+    int line_bytes,
+    int bpp,
+    int red_off,
+    int green_off,
+    int blue_off,
+    int x,
+    int y,
+    std::uint8_t r,
+    std::uint8_t g,
+    std::uint8_t b
+) {
+    if (x < 0 || y < 0 || x >= fb_w || y >= fb_h || fb_mem == nullptr) {
+        return;
+    }
+    const int bytes_pp = bpp / 8;
+    std::uint8_t* row = fb_mem + static_cast<std::size_t>(y) * line_bytes;
+    const std::uint32_t px = pack_pixel(bpp, red_off, green_off, blue_off, r, g, b);
+    if (bytes_pp == 2) {
+        *reinterpret_cast<std::uint16_t*>(row + x * 2) = static_cast<std::uint16_t>(px);
+    } else {
+        *reinterpret_cast<std::uint32_t*>(row + x * 4) = px;
+    }
+}
+
 // Take over a text VT so /dev/fb0 actually paints the DSI panel.
 // From SSH this needs root (or tty group) and the desktop must be stopped.
 bool claim_vt_graphics() {
@@ -109,13 +137,11 @@ bool claim_vt_graphics() {
     }
 
     if (vt_no > 0) {
+        // Do not VT_WAITACTIVE: from SSH that can block forever and the panel
+        // never gets test bars / video. Activate and continue.
         if (ioctl(fd, VT_ACTIVATE, vt_no) != 0) {
             logutil::warn(
                 std::string("DisplayHud: VT_ACTIVATE failed: ") + std::strerror(errno)
-            );
-        } else if (ioctl(fd, VT_WAITACTIVE, vt_no) != 0) {
-            logutil::warn(
-                std::string("DisplayHud: VT_WAITACTIVE failed: ") + std::strerror(errno)
             );
         } else {
             logutil::info("DisplayHud claimed VT" + std::to_string(vt_no));
@@ -129,7 +155,6 @@ bool claim_vt_graphics() {
             + std::strerror(errno)
             + " (desktop may own the panel)"
         );
-        // Keep fd so we can still try fb; caller decides.
     } else {
         logutil::info("DisplayHud console in KD_GRAPHICS");
     }
@@ -193,6 +218,126 @@ void draw_test_bars(
     }
 }
 
+void blit_fusion(
+    std::uint8_t* fb_mem,
+    int fb_w,
+    int fb_h,
+    int line_bytes,
+    int bpp,
+    int red_off,
+    int green_off,
+    int blue_off,
+    const RgbFrame& frame
+) {
+    const int src_w = frame.width;
+    const int src_h = frame.height;
+    const std::uint8_t* src = frame.rgb.data();
+    const int bytes_pp = bpp / 8;
+
+    const float scale = std::min(
+        static_cast<float>(fb_w) / static_cast<float>(src_w),
+        static_cast<float>(fb_h) / static_cast<float>(src_h)
+    );
+    const int dst_w = std::max(1, static_cast<int>(src_w * scale + 0.5f));
+    const int dst_h = std::max(1, static_cast<int>(src_h * scale + 0.5f));
+    const int origin_x = (fb_w - dst_w) / 2;
+    const int origin_y = (fb_h - dst_h) / 2;
+
+    for (int y = 0; y < fb_h; ++y) {
+        std::uint8_t* row = fb_mem + static_cast<std::size_t>(y) * line_bytes;
+        const int sy_img = y - origin_y;
+        for (int x = 0; x < fb_w; ++x) {
+            const int sx_img = x - origin_x;
+            std::uint8_t r = 0;
+            std::uint8_t g = 0;
+            std::uint8_t b = 0;
+            if (sx_img >= 0 && sy_img >= 0 && sx_img < dst_w && sy_img < dst_h) {
+                const int sx = (sx_img * src_w) / dst_w;
+                const int sy = (sy_img * src_h) / dst_h;
+                const int si = (sy * src_w + sx) * 3;
+                r = src[si];
+                g = src[si + 1];
+                b = src[si + 2];
+            }
+            const std::uint32_t px = pack_pixel(
+                bpp, red_off, green_off, blue_off, r, g, b
+            );
+            if (bytes_pp == 2) {
+                *reinterpret_cast<std::uint16_t*>(row + x * 2) =
+                    static_cast<std::uint16_t>(px);
+            } else {
+                *reinterpret_cast<std::uint32_t*>(row + x * 4) = px;
+            }
+        }
+    }
+}
+
+void blit_lidar_square(
+    std::uint8_t* fb_mem,
+    int fb_w,
+    int fb_h,
+    int line_bytes,
+    int bpp,
+    int red_off,
+    int green_off,
+    int blue_off,
+    const LidarMapPayload& lidar
+) {
+    // Square side = 1/3 of the shorter panel edge, top-left.
+    const int side = std::max(1, std::min(fb_w, fb_h) / 3);
+    std::vector<std::uint8_t> lidar_rgb;
+    LidarMap mapper;
+    if (!mapper.render_hud(lidar, side, lidar_rgb)
+        || static_cast<int>(lidar_rgb.size()) < side * side * 3) {
+        // Opaque placeholder so the slot is still visible if scan is empty.
+        for (int y = 0; y < side; ++y) {
+            for (int x = 0; x < side; ++x) {
+                put_fb_rgb(
+                    fb_mem, fb_w, fb_h, line_bytes, bpp,
+                    red_off, green_off, blue_off,
+                    x, y, 12, 12, 16
+                );
+            }
+        }
+        return;
+    }
+
+    for (int y = 0; y < side; ++y) {
+        for (int x = 0; x < side; ++x) {
+            const int si = (y * side + x) * 3;
+            put_fb_rgb(
+                fb_mem, fb_w, fb_h, line_bytes, bpp,
+                red_off, green_off, blue_off,
+                x,
+                y,
+                lidar_rgb[static_cast<size_t>(si)],
+                lidar_rgb[static_cast<size_t>(si + 1)],
+                lidar_rgb[static_cast<size_t>(si + 2)]
+            );
+        }
+    }
+
+    // 1px border so the square reads against the fusion feed.
+    for (int i = 0; i < side; ++i) {
+        put_fb_rgb(
+            fb_mem, fb_w, fb_h, line_bytes, bpp,
+            red_off, green_off, blue_off, i, 0, 180, 180, 190
+        );
+        put_fb_rgb(
+            fb_mem, fb_w, fb_h, line_bytes, bpp,
+            red_off, green_off, blue_off, i, side - 1, 180, 180, 190
+        );
+        put_fb_rgb(
+            fb_mem, fb_w, fb_h, line_bytes, bpp,
+            red_off, green_off, blue_off, 0, i, 180, 180, 190
+        );
+        put_fb_rgb(
+            fb_mem, fb_w, fb_h, line_bytes, bpp,
+            red_off, green_off, blue_off, side - 1, i, 180, 180, 190
+        );
+    }
+}
+
 #endif
 
 } // namespace
@@ -207,10 +352,9 @@ bool DisplayHud::init(int /*width*/, int /*height*/) {
     enabled = false;
     return true;
 #else
-    // Always try; SSH without sudo often fails but fb mmap may still work
-    // after the desktop is stopped.
-    (void)claim_vt_graphics();
-    if (env_truthy("HUD_SKIP_VT")) {
+    if (!env_truthy("HUD_SKIP_VT")) {
+        (void)claim_vt_graphics();
+    } else {
         logutil::info("DisplayHud: HUD_SKIP_VT set; skipped console claim");
     }
 
@@ -290,7 +434,7 @@ bool DisplayHud::init(int /*width*/, int /*height*/) {
         return true;
     }
 
-    // RGB test bars for ~0.4s so a blank panel is distinguishable from "not drawing".
+    // RGB test bars so a blank panel is distinguishable from "not drawing".
     draw_test_bars(
         fb_mem_, fb_w_, fb_h_, fb_line_bytes_, fb_bpp_,
         red_off_, green_off_, blue_off_
@@ -299,7 +443,8 @@ bool DisplayHud::init(int /*width*/, int /*height*/) {
         std::string("DisplayHud fb ") + opened + " "
         + std::to_string(fb_w_) + "x" + std::to_string(fb_h_)
         + " bpp=" + std::to_string(fb_bpp_)
-        + " (test bars drawn; if panel stays dark/desktop, stop the DE)"
+        + " lidar_square=" + std::to_string(std::min(fb_w_, fb_h_) / 3)
+        + "px (test bars drawn; if panel stays dark/desktop, stop the DE)"
     );
     return true;
 #endif
@@ -340,89 +485,17 @@ bool DisplayHud::draw(
         return false;
     }
 
-    const int src_w = frame.width;
-    const int src_h = frame.height;
-    const std::uint8_t* src = frame.rgb.data();
-    const int bytes_pp = fb_bpp_ / 8;
-
-    const float scale = std::min(
-        static_cast<float>(fb_w_) / static_cast<float>(src_w),
-        static_cast<float>(fb_h_) / static_cast<float>(src_h)
+    // Full-panel fusion feed, then lidar instrument square over top-left.
+    blit_fusion(
+        fb_mem_, fb_w_, fb_h_, fb_line_bytes_, fb_bpp_,
+        red_off_, green_off_, blue_off_, frame
     );
-    const int dst_w = std::max(1, static_cast<int>(src_w * scale + 0.5f));
-    const int dst_h = std::max(1, static_cast<int>(src_h * scale + 0.5f));
-    const int origin_x = (fb_w_ - dst_w) / 2;
-    const int origin_y = (fb_h_ - dst_h) / 2;
 
-    for (int y = 0; y < fb_h_; ++y) {
-        std::uint8_t* row = fb_mem_ + static_cast<std::size_t>(y) * fb_line_bytes_;
-        const int sy_img = y - origin_y;
-        for (int x = 0; x < fb_w_; ++x) {
-            const int sx_img = x - origin_x;
-            std::uint8_t r = 0;
-            std::uint8_t g = 0;
-            std::uint8_t b = 0;
-            if (sx_img >= 0 && sy_img >= 0 && sx_img < dst_w && sy_img < dst_h) {
-                const int sx = (sx_img * src_w) / dst_w;
-                const int sy = (sy_img * src_h) / dst_h;
-                const int si = (sy * src_w + sx) * 3;
-                r = src[si];
-                g = src[si + 1];
-                b = src[si + 2];
-            }
-            const std::uint32_t px = pack_pixel(
-                fb_bpp_, red_off_, green_off_, blue_off_, r, g, b
-            );
-            if (bytes_pp == 2) {
-                *reinterpret_cast<std::uint16_t*>(row + x * 2) =
-                    static_cast<std::uint16_t>(px);
-            } else {
-                *reinterpret_cast<std::uint32_t*>(row + x * 4) = px;
-            }
-        }
-    }
-
-    // Small bottom-right lidar inset. Keep this cheap; fusion blit is the priority.
     if (lidar_or_null != nullptr) {
-        const int inset = std::clamp(std::min(fb_w_, fb_h_) / 4, 72, 140);
-        std::vector<std::uint8_t> lidar_rgb;
-        LidarMap mapper;
-        if (mapper.render_hud(*lidar_or_null, inset, lidar_rgb)
-            && static_cast<int>(lidar_rgb.size()) >= inset * inset * 3) {
-            const int pad = 8;
-            const int x0 = std::max(0, fb_w_ - inset - pad);
-            const int y0 = std::max(0, fb_h_ - inset - pad);
-            for (int y = 0; y < inset; ++y) {
-                const int fy = y0 + y;
-                if (fy < 0 || fy >= fb_h_) {
-                    continue;
-                }
-                std::uint8_t* row =
-                    fb_mem_ + static_cast<std::size_t>(fy) * fb_line_bytes_;
-                for (int x = 0; x < inset; ++x) {
-                    const int fx = x0 + x;
-                    if (fx < 0 || fx >= fb_w_) {
-                        continue;
-                    }
-                    const int si = (y * inset + x) * 3;
-                    const std::uint8_t r = lidar_rgb[static_cast<size_t>(si)];
-                    const std::uint8_t g = lidar_rgb[static_cast<size_t>(si + 1)];
-                    const std::uint8_t b = lidar_rgb[static_cast<size_t>(si + 2)];
-                    if (r == 0 && g == 0 && b == 0) {
-                        continue; // keep fusion under outside-disk pixels
-                    }
-                    const std::uint32_t px = pack_pixel(
-                        fb_bpp_, red_off_, green_off_, blue_off_, r, g, b
-                    );
-                    if (bytes_pp == 2) {
-                        *reinterpret_cast<std::uint16_t*>(row + fx * 2) =
-                            static_cast<std::uint16_t>(px);
-                    } else {
-                        *reinterpret_cast<std::uint32_t*>(row + fx * 4) = px;
-                    }
-                }
-            }
-        }
+        blit_lidar_square(
+            fb_mem_, fb_w_, fb_h_, fb_line_bytes_, fb_bpp_,
+            red_off_, green_off_, blue_off_, *lidar_or_null
+        );
     }
 
     poll_stdin_quit(quit_requested_);

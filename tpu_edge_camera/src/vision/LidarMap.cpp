@@ -91,12 +91,18 @@ bool LidarMap::render_hud(
     }
 
     const int n = size_px * size_px * 3;
+    // Opaque dark square so the top-left instrument always covers fusion.
     rgb_out.assign(static_cast<size_t>(n), 0);
+    for (int i = 0; i < n; i += 3) {
+        rgb_out[static_cast<size_t>(i)] = 12;
+        rgb_out[static_cast<size_t>(i + 1)] = 12;
+        rgb_out[static_cast<size_t>(i + 2)] = 16;
+    }
 
     const float range_mm = 4000.0f;
     const float cx = (size_px - 1) * 0.5f;
     const float cy = (size_px - 1) * 0.5f;
-    const float radius = std::min(cx, cy);
+    const float radius = std::min(cx, cy) * 0.92f;
 
     auto put_rgb = [&](int x, int y, uint8_t r, uint8_t g, uint8_t b) {
         if (x < 0 || y < 0 || x >= size_px || y >= size_px) {

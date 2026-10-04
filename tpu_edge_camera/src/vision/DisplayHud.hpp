@@ -8,6 +8,7 @@
 #include "vision/LidarMap.hpp"
 
 // Direct framebuffer HUD (/dev/fb0). No OpenCV, no X11.
+// Layout: full-panel fusion video + top-left lidar square (side = min(w,h)/3).
 
 struct HudOverlay {
     double lat = 0.0;
