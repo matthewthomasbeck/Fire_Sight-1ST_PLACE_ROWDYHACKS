@@ -3,6 +3,7 @@
 #include "util/Log.hpp"
 
 #include <algorithm>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -78,6 +79,95 @@ bool env_truthy(const char* key) {
         return false;
     }
     return std::string(v) == "1" || std::string(v) == "true" || std::string(v) == "TRUE";
+}
+
+// 5x7 glyphs, MSB = left. Covers LAT/LON/UNKNOWN + digits/sign/dot/colon/space.
+constexpr int k_font_w = 5;
+constexpr int k_font_h = 7;
+
+const std::uint8_t* glyph5x7(char ch) {
+    static const std::uint8_t g_space[7] = {0, 0, 0, 0, 0, 0, 0};
+    static const std::uint8_t g_colon[7] = {0x00, 0x0C, 0x0C, 0x00, 0x0C, 0x0C, 0x00};
+    static const std::uint8_t g_dot[7] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x0C, 0x0C};
+    static const std::uint8_t g_minus[7] = {0x00, 0x00, 0x00, 0x1F, 0x00, 0x00, 0x00};
+    static const std::uint8_t g_plus[7] = {0x00, 0x04, 0x04, 0x1F, 0x04, 0x04, 0x00};
+    static const std::uint8_t g_0[7] = {0x0E, 0x11, 0x13, 0x15, 0x19, 0x11, 0x0E};
+    static const std::uint8_t g_1[7] = {0x04, 0x0C, 0x04, 0x04, 0x04, 0x04, 0x0E};
+    static const std::uint8_t g_2[7] = {0x0E, 0x11, 0x01, 0x06, 0x08, 0x10, 0x1F};
+    static const std::uint8_t g_3[7] = {0x1F, 0x02, 0x04, 0x02, 0x01, 0x11, 0x0E};
+    static const std::uint8_t g_4[7] = {0x02, 0x06, 0x0A, 0x12, 0x1F, 0x02, 0x02};
+    static const std::uint8_t g_5[7] = {0x1F, 0x10, 0x1E, 0x01, 0x01, 0x11, 0x0E};
+    static const std::uint8_t g_6[7] = {0x06, 0x08, 0x10, 0x1E, 0x11, 0x11, 0x0E};
+    static const std::uint8_t g_7[7] = {0x1F, 0x01, 0x02, 0x04, 0x08, 0x08, 0x08};
+    static const std::uint8_t g_8[7] = {0x0E, 0x11, 0x11, 0x0E, 0x11, 0x11, 0x0E};
+    static const std::uint8_t g_9[7] = {0x0E, 0x11, 0x11, 0x0F, 0x01, 0x02, 0x0C};
+    static const std::uint8_t g_A[7] = {0x0E, 0x11, 0x11, 0x1F, 0x11, 0x11, 0x11};
+    static const std::uint8_t g_K[7] = {0x11, 0x12, 0x14, 0x18, 0x14, 0x12, 0x11};
+    static const std::uint8_t g_L[7] = {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x1F};
+    static const std::uint8_t g_N[7] = {0x11, 0x19, 0x15, 0x13, 0x11, 0x11, 0x11};
+    static const std::uint8_t g_O[7] = {0x0E, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0E};
+    static const std::uint8_t g_T[7] = {0x1F, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04};
+    static const std::uint8_t g_U[7] = {0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0E};
+    static const std::uint8_t g_W[7] = {0x11, 0x11, 0x11, 0x15, 0x15, 0x15, 0x0A};
+
+    switch (ch) {
+    case ' ':
+        return g_space;
+    case ':':
+        return g_colon;
+    case '.':
+        return g_dot;
+    case '-':
+        return g_minus;
+    case '+':
+        return g_plus;
+    case '0':
+        return g_0;
+    case '1':
+        return g_1;
+    case '2':
+        return g_2;
+    case '3':
+        return g_3;
+    case '4':
+        return g_4;
+    case '5':
+        return g_5;
+    case '6':
+        return g_6;
+    case '7':
+        return g_7;
+    case '8':
+        return g_8;
+    case '9':
+        return g_9;
+    case 'A':
+    case 'a':
+        return g_A;
+    case 'K':
+    case 'k':
+        return g_K;
+    case 'L':
+    case 'l':
+        return g_L;
+    case 'N':
+    case 'n':
+        return g_N;
+    case 'O':
+    case 'o':
+        return g_O;
+    case 'T':
+    case 't':
+        return g_T;
+    case 'U':
+    case 'u':
+        return g_U;
+    case 'W':
+    case 'w':
+        return g_W;
+    default:
+        return g_space;
+    }
 }
 
 void put_fb_rgb(
@@ -282,6 +372,134 @@ void blit_fusion(
     }
 }
 
+void draw_char_scaled(
+    std::uint8_t* fb_mem,
+    int fb_w,
+    int fb_h,
+    int line_bytes,
+    int bpp,
+    int red_off,
+    int green_off,
+    int blue_off,
+    int x0,
+    int y0,
+    char ch,
+    int scale
+) {
+    const std::uint8_t* g = glyph5x7(ch);
+    for (int row = 0; row < k_font_h; ++row) {
+        const std::uint8_t bits = g[row];
+        for (int col = 0; col < k_font_w; ++col) {
+            if (((bits >> (k_font_w - 1 - col)) & 1) == 0) {
+                continue;
+            }
+            for (int dy = 0; dy < scale; ++dy) {
+                for (int dx = 0; dx < scale; ++dx) {
+                    const int px = x0 + col * scale + dx;
+                    const int py = y0 + row * scale + dy;
+                    // Dark outline for contrast on bright fusion.
+                    for (int oy = -1; oy <= 1; ++oy) {
+                        for (int ox = -1; ox <= 1; ++ox) {
+                            if (ox == 0 && oy == 0) {
+                                continue;
+                            }
+                            put_fb_rgb(
+                                fb_mem, fb_w, fb_h, line_bytes, bpp,
+                                red_off, green_off, blue_off,
+                                px + ox, py + oy, 0, 0, 0
+                            );
+                        }
+                    }
+                    put_fb_rgb(
+                        fb_mem, fb_w, fb_h, line_bytes, bpp,
+                        red_off, green_off, blue_off,
+                        px, py, 255, 255, 255
+                    );
+                }
+            }
+        }
+    }
+}
+
+void draw_text_scaled(
+    std::uint8_t* fb_mem,
+    int fb_w,
+    int fb_h,
+    int line_bytes,
+    int bpp,
+    int red_off,
+    int green_off,
+    int blue_off,
+    int x0,
+    int y0,
+    const char* text,
+    int scale
+) {
+    if (text == nullptr) {
+        return;
+    }
+    const int advance = (k_font_w + 1) * scale;
+    int x = x0;
+    for (const char* p = text; *p != '\0'; ++p) {
+        draw_char_scaled(
+            fb_mem, fb_w, fb_h, line_bytes, bpp,
+            red_off, green_off, blue_off, x, y0, *p, scale
+        );
+        x += advance;
+    }
+}
+
+int text_pixel_width(const char* text, int scale) {
+    if (text == nullptr || text[0] == '\0') {
+        return 0;
+    }
+    const int n = static_cast<int>(std::strlen(text));
+    return n * (k_font_w + 1) * scale - scale;
+}
+
+void draw_gps_overlay(
+    std::uint8_t* fb_mem,
+    int fb_w,
+    int fb_h,
+    int line_bytes,
+    int bpp,
+    int red_off,
+    int green_off,
+    int blue_off,
+    const HudOverlay& overlay
+) {
+    char lat_line[48];
+    char lon_line[48];
+    if (overlay.gps_valid) {
+        std::snprintf(lat_line, sizeof(lat_line), "LAT: %.7f", overlay.lat);
+        std::snprintf(lon_line, sizeof(lon_line), "LON: %.7f", overlay.lon);
+    } else {
+        std::snprintf(lat_line, sizeof(lat_line), "LAT: UNKNOWN");
+        std::snprintf(lon_line, sizeof(lon_line), "LON: UNKNOWN");
+    }
+
+    // Large type; scale with panel width so 800x480 stays readable.
+    const int scale = std::clamp(fb_w / 160, 3, 5);
+    const int pad = 10;
+    const int line_h = k_font_h * scale + scale * 2;
+    const int y0 = pad;
+    const int y1 = pad + line_h;
+
+    const int w0 = text_pixel_width(lat_line, scale);
+    const int w1 = text_pixel_width(lon_line, scale);
+    const int x0 = std::max(pad, fb_w - pad - w0);
+    const int x1 = std::max(pad, fb_w - pad - w1);
+
+    draw_text_scaled(
+        fb_mem, fb_w, fb_h, line_bytes, bpp,
+        red_off, green_off, blue_off, x0, y0, lat_line, scale
+    );
+    draw_text_scaled(
+        fb_mem, fb_w, fb_h, line_bytes, bpp,
+        red_off, green_off, blue_off, x1, y1, lon_line, scale
+    );
+}
+
 void blit_lidar_cache(
     std::uint8_t* fb_mem,
     int fb_w,
@@ -468,7 +686,7 @@ void DisplayHud::shutdown() {
 bool DisplayHud::draw(
     const RgbFrame& frame,
     const LidarMapPayload* lidar_or_null,
-    const HudOverlay& /*overlay*/
+    const HudOverlay& overlay
 ) {
     if (!enabled) {
         return true;
@@ -477,6 +695,7 @@ bool DisplayHud::draw(
 #if !defined(__linux__)
     (void)frame;
     (void)lidar_or_null;
+    (void)overlay;
     return true;
 #else
     if (fb_mem_ == nullptr || frame.width <= 0 || frame.height <= 0
@@ -522,6 +741,11 @@ bool DisplayHud::draw(
             }
         }
     }
+
+    draw_gps_overlay(
+        fb_mem_, fb_w_, fb_h_, fb_line_bytes_, fb_bpp_,
+        red_off_, green_off_, blue_off_, overlay
+    );
 
     poll_stdin_quit(quit_requested_);
     return true;
