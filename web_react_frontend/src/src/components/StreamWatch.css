@@ -11,13 +11,14 @@
 }
 
 .watch__video {
-  min-width: 0;
+  flex: 0 0 auto;
 }
 
 .watch__video .stream__frame {
-  width: auto;
-  height: min(70vh, 36rem);
+  width: calc(min(70vh, 36rem) * 3 / 4);
+  height: auto;
   aspect-ratio: 3 / 4;
+  max-width: 100%;
   margin-inline: 0;
 }
 
