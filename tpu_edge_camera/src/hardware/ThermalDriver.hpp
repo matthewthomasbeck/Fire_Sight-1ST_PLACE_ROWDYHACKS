@@ -1,6 +1,7 @@
 #pragma once
 
 // MLX90640 32x24 celsius on I2C1. Port from C_Hardware_Testing ThermalDriver + mlx90640/.
+// Live path uses a background reader so GetFrameData does not block the IR loop.
 
 struct ThermalDriver {
     static constexpr int width = 32;

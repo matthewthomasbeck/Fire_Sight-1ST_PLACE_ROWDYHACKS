@@ -2,7 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import "./StreamPlayer.css";
 
 const RETRY_MS = 3000;
-const POLL_MS = 120;
+// Delay after a successful frame before requesting the next. Keep small;
+// the network RTT already paces the loop.
+const POLL_MS = 16;
 
 function isHttpUrl(url) {
   // Absolute http(s), or same-origin path (e.g. /api/v1/streams/stream_1/jpeg)
@@ -46,6 +48,7 @@ export default function StreamPlayer({ streamUrl = "" }) {
     let pollTimer = null;
     let lastObjectUrl = null;
     let frames = 0;
+    let inFlight = false;
 
     const show = (src) => {
       const img = imgRef.current;
@@ -71,26 +74,42 @@ export default function StreamPlayer({ streamUrl = "" }) {
 
     setStatus("connecting");
 
-    const tick = async () => {
+    const schedule = (ms) => {
       if (stopped) return;
+      pollTimer = setTimeout(tick, ms);
+    };
+
+    const tick = async () => {
+      if (stopped || inFlight) return;
+      inFlight = true;
       try {
         const res = await fetch(pollUrl(streamUrl), { cache: "no-store" });
+        if (stopped) return;
+
         if (res.status === 204) {
           setStatus((prev) =>
-            prev === "live" || prev === "connecting" || prev === "waiting" ? "waiting" : prev
+            prev === "live" || prev === "connecting" || prev === "waiting"
+              ? "waiting"
+              : prev
           );
-        } else if (res.ok) {
-          const blob = await res.blob();
-          show(URL.createObjectURL(blob));
-        } else {
+          schedule(80);
+          return;
+        }
+
+        if (!res.ok) {
           retry();
           return;
         }
+
+        const blob = await res.blob();
+        if (stopped) return;
+        show(URL.createObjectURL(blob));
+        schedule(POLL_MS);
       } catch {
-        retry();
-        return;
+        if (!stopped) retry();
+      } finally {
+        inFlight = false;
       }
-      pollTimer = setTimeout(tick, POLL_MS);
     };
 
     tick();

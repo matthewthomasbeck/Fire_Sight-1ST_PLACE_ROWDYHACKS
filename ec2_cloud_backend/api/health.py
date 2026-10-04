@@ -27,6 +27,7 @@ def root():
             "gps_one": "/api/v1/gps/<gps_id>",
             "maps": "/api/v1/maps/config",
             "ingest_frame": "POST /api/v1/ingest/frame",
+            "ingest_frame_jpeg": "POST /api/v1/ingest/frame/jpeg?stream_id=stream_1",
             "ingest_gps": "POST /api/v1/ingest/gps",
         },
     }), 200

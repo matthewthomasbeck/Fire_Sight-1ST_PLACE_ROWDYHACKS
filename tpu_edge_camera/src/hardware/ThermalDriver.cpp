@@ -5,8 +5,13 @@
 #include "util/Log.hpp"
 
 #include <algorithm>
+#include <atomic>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
+#include <cstring>
+#include <mutex>
+#include <thread>
 
 static constexpr uint8_t k_mlx_addr = 0x33;
 static constexpr uint8_t k_refresh_rate = 0b101; // 16 Hz
@@ -16,7 +21,17 @@ static constexpr float k_emissivity = 0.95f;
 static paramsMLX90640 g_params{};
 static uint16_t g_ee_data[832]{};
 static uint16_t g_frame_data[834]{};
-static bool g_live_ready = false;
+static bool g_hw_ready = false;
+
+// Background reader so MLX90640_GetFrameData never blocks the IR/fusion loop.
+static std::thread g_reader;
+static std::atomic<bool> g_reader_stop{false};
+static std::mutex g_frame_mu;
+static float g_latest[ThermalDriver::pixel_count]{};
+static float g_latest_min = 0.0f;
+static float g_latest_max = 0.0f;
+static int g_latest_index = 0;
+static bool g_have_frame = false;
 
 static void refresh_demo(ThermalDriver& self) {
     const float ambient = 20.0f;
@@ -46,7 +61,7 @@ static void refresh_demo(ThermalDriver& self) {
     ++self.frame_index;
 }
 
-static bool try_init_live() {
+static bool try_init_hw() {
     MLX90640_I2CInit();
 
     if (MLX90640_DumpEE(k_mlx_addr, g_ee_data) != 0) {
@@ -59,12 +74,12 @@ static bool try_init_live() {
     MLX90640_SetRefreshRate(k_mlx_addr, k_refresh_rate);
     MLX90640_SetChessMode(k_mlx_addr);
     MLX90640_SetResolution(k_mlx_addr, 0x03);
-    g_live_ready = true;
+    g_hw_ready = true;
     return true;
 }
 
-static bool refresh_live(ThermalDriver& self) {
-    if (!g_live_ready) {
+static bool read_one_live_frame(float* out_pixels, float* out_min, float* out_max) {
+    if (!g_hw_ready) {
         return false;
     }
 
@@ -76,28 +91,99 @@ static bool refresh_live(ThermalDriver& self) {
     MLX90640_InterpolateOutliers(g_frame_data, g_ee_data);
     const float ta = MLX90640_GetTa(g_frame_data, &g_params);
     const float tr = ta - k_ta_shift;
-    MLX90640_CalculateTo(g_frame_data, &g_params, k_emissivity, tr, self.pixels);
-    MLX90640_BadPixelsCorrection(g_params.brokenPixels, self.pixels, 1, &g_params);
-    MLX90640_BadPixelsCorrection(g_params.outlierPixels, self.pixels, 1, &g_params);
+    MLX90640_CalculateTo(g_frame_data, &g_params, k_emissivity, tr, out_pixels);
+    MLX90640_BadPixelsCorrection(g_params.brokenPixels, out_pixels, 1, &g_params);
+    MLX90640_BadPixelsCorrection(g_params.outlierPixels, out_pixels, 1, &g_params);
 
-    self.t_min = 999.0f;
-    self.t_max = -999.0f;
+    float t_min = 999.0f;
+    float t_max = -999.0f;
     for (int i = 0; i < ThermalDriver::pixel_count; ++i) {
-        self.t_min = std::min(self.t_min, self.pixels[i]);
-        self.t_max = std::max(self.t_max, self.pixels[i]);
+        t_min = std::min(t_min, out_pixels[i]);
+        t_max = std::max(t_max, out_pixels[i]);
     }
-    ++self.frame_index;
+    *out_min = t_min;
+    *out_max = t_max;
     return true;
+}
+
+static void reader_loop() {
+    float scratch[ThermalDriver::pixel_count];
+    int fail_streak = 0;
+
+    while (!g_reader_stop.load()) {
+        float t_min = 0.0f;
+        float t_max = 0.0f;
+        if (!read_one_live_frame(scratch, &t_min, &t_max)) {
+            ++fail_streak;
+            if (fail_streak >= 8) {
+                logutil::warn("ThermalDriver reader stalled; stopping live thread");
+                g_hw_ready = false;
+                break;
+            }
+            continue;
+        }
+        fail_streak = 0;
+
+        {
+            std::lock_guard<std::mutex> lock(g_frame_mu);
+            std::memcpy(g_latest, scratch, sizeof(g_latest));
+            g_latest_min = t_min;
+            g_latest_max = t_max;
+            ++g_latest_index;
+            g_have_frame = true;
+        }
+    }
+}
+
+static void stop_reader() {
+    g_reader_stop.store(true);
+    if (g_reader.joinable()) {
+        g_reader.join();
+    }
+    g_reader_stop.store(false);
+    g_hw_ready = false;
+    std::lock_guard<std::mutex> lock(g_frame_mu);
+    g_have_frame = false;
+}
+
+static bool start_reader() {
+    stop_reader();
+    if (!try_init_hw()) {
+        return false;
+    }
+
+    {
+        std::lock_guard<std::mutex> lock(g_frame_mu);
+        g_have_frame = false;
+        g_latest_index = 0;
+    }
+
+    g_reader_stop.store(false);
+    g_reader = std::thread(reader_loop);
+
+    // Wait briefly for first frame so init can report live vs demo.
+    for (int i = 0; i < 40; ++i) {
+        {
+            std::lock_guard<std::mutex> lock(g_frame_mu);
+            if (g_have_frame) {
+                return true;
+            }
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    }
+
+    logutil::warn("ThermalDriver timed out waiting for first frame");
+    stop_reader();
+    return false;
 }
 
 bool ThermalDriver::init() {
     frame_index = 0;
-    g_live_ready = false;
 
-    if (try_init_live()) {
+    if (start_reader()) {
         demo_mode = false;
         ready = true;
-        logutil::info("ThermalDriver live MLX90640");
+        logutil::info("ThermalDriver live MLX90640 (async reader)");
         return refresh();
     }
 
@@ -114,12 +200,20 @@ bool ThermalDriver::refresh() {
     }
 
     if (!demo_mode) {
-        if (refresh_live(*this)) {
+        std::lock_guard<std::mutex> lock(g_frame_mu);
+        if (g_have_frame) {
+            std::memcpy(pixels, g_latest, sizeof(pixels));
+            t_min = g_latest_min;
+            t_max = g_latest_max;
+            frame_index = g_latest_index;
             return true;
         }
-        logutil::warn("ThermalDriver live read failed, demo fallback");
+        if (g_hw_ready) {
+            // Reader still starting / between frames; keep last pixels.
+            return true;
+        }
+        logutil::warn("ThermalDriver live reader died, demo fallback");
         demo_mode = true;
-        g_live_ready = false;
     }
 
     refresh_demo(*this);
@@ -130,5 +224,5 @@ void ThermalDriver::shutdown() {
     ready = false;
     demo_mode = true;
     frame_index = 0;
-    g_live_ready = false;
+    stop_reader();
 }

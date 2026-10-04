@@ -1,4 +1,5 @@
 // Predator fusion uplink + optional framebuffer HUD (IR + thermal).
+// IR paces the loop; thermal is async so GetFrameData cannot stall fusion.
 
 #include "config/Config.hpp"
 #include "hardware/CameraDriver.hpp"
@@ -112,6 +113,7 @@ int main() {
 
     RgbFrame frame;
     HudOverlay overlay;
+    auto last_loop = std::chrono::steady_clock::now();
 
     while (true) {
         if (hud.poll_quit()) {
@@ -124,6 +126,7 @@ int main() {
             sleep_for_fps(cfg.target_fps);
             continue;
         }
+        // Non-blocking: copies latest thermal snapshot from async reader.
         if (!thermal.refresh()) {
             logutil::warn("thermal refresh failed");
             sleep_for_fps(cfg.target_fps);
@@ -142,9 +145,10 @@ int main() {
 
         if (cfg.uplink_enabled) {
             std::vector<std::uint8_t> jpeg;
-            if (fusion.encode_jpeg(frame, jpeg, 80)) {
+            if (fusion.encode_jpeg(frame, jpeg, 70)) {
                 {
                     std::lock_guard<std::mutex> lock(uplink_mu);
+                    // Drop stale frames: only the newest JPEG waits for the worker.
                     uplink_jpeg.swap(jpeg);
                     uplink_has_job = true;
                 }
@@ -152,10 +156,16 @@ int main() {
             }
         }
 
-        // Live sensors already pace the loop; extra sleep for demo / headless.
-        if (!hud.enabled || (camera.demo_mode && thermal.demo_mode)) {
-            sleep_for_fps(cfg.target_fps);
+        // Pace to target_fps. Live IR no longer waits on 16 Hz thermal.
+        const auto now = std::chrono::steady_clock::now();
+        const auto min_period = std::chrono::milliseconds(
+            1000 / (cfg.target_fps < 1 ? 1 : cfg.target_fps)
+        );
+        const auto elapsed = now - last_loop;
+        if (elapsed < min_period) {
+            std::this_thread::sleep_for(min_period - elapsed);
         }
+        last_loop = std::chrono::steady_clock::now();
     }
 
     if (cfg.uplink_enabled) {

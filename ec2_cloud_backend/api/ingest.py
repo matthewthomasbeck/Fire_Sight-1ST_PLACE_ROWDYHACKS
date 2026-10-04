@@ -9,10 +9,33 @@ from helpers.resources import gps_ids, store, stream_ids
 ingest_bp = Blueprint("ingest", __name__)
 
 
+@ingest_bp.route("/ingest/frame/jpeg", methods=["POST"])
+def ingest_frame_jpeg():
+    """
+    Fast path: raw JPEG body.
+    Query: stream_id=stream_1|stream_2
+    Content-Type: image/jpeg
+    """
+    stream_id = (request.args.get("stream_id") or "").strip()
+    if stream_id not in stream_ids():
+        return jsonify({"status": "error", "message": "unknown stream_id"}), 400
+
+    jpeg = request.get_data(cache=False)
+    if not jpeg:
+        return jsonify({"status": "error", "message": "empty jpeg body"}), 400
+
+    try:
+        store.set_stream_jpeg_bytes(stream_id, jpeg)
+    except ValueError as exc:
+        return jsonify({"status": "error", "message": str(exc)}), 400
+
+    return jsonify({"status": "accepted", "stream_id": stream_id}), 202
+
+
 @ingest_bp.route("/ingest/frame", methods=["POST"])
 def ingest_frame():
     """
-    Body: { "stream_id": "stream_1"|"stream_2", "frame": "<base64 jpeg>" }
+    Legacy body: { "stream_id": "stream_1"|"stream_2", "frame": "<base64 jpeg>" }
     Auth later: Auth0 M2M.
     """
     body = request.get_json(silent=True) or {}
