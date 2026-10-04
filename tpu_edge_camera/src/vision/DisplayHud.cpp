@@ -370,7 +370,11 @@ void blit_fusion(
     int green_off,
     int blue_off,
     const RgbFrame& frame,
-    int skip_side
+    int skip_side,
+    int skip_gps_x,
+    int skip_gps_y,
+    int skip_gps_w,
+    int skip_gps_h
 ) {
     const int src_w = frame.width;
     const int src_h = frame.height;
@@ -388,8 +392,13 @@ void blit_fusion(
         std::uint8_t* row = fb_mem + static_cast<std::size_t>(y) * line_bytes;
         const int sy_img = y - origin_y;
         for (int x = 0; x < fb_w; ++x) {
-            // Leave the lidar instrument rect alone so it never flashes under video.
+            // Leave lidar + GPS overlay rects alone to avoid flash under overlays.
             if (x < skip_side && y < skip_side) {
+                continue;
+            }
+            if (skip_gps_w > 0 && skip_gps_h > 0
+                && x >= skip_gps_x && x < skip_gps_x + skip_gps_w
+                && y >= skip_gps_y && y < skip_gps_y + skip_gps_h) {
                 continue;
             }
 
@@ -419,142 +428,6 @@ void blit_fusion(
     }
 }
 
-void fill_rect(
-    std::uint8_t* fb_mem,
-    int fb_w,
-    int fb_h,
-    int line_bytes,
-    int bpp,
-    int red_off,
-    int green_off,
-    int blue_off,
-    int x0,
-    int y0,
-    int w,
-    int h,
-    std::uint8_t r,
-    std::uint8_t g,
-    std::uint8_t b
-) {
-    for (int y = y0; y < y0 + h; ++y) {
-        for (int x = x0; x < x0 + w; ++x) {
-            put_fb_rgb(
-                fb_mem, fb_w, fb_h, line_bytes, bpp,
-                red_off, green_off, blue_off, x, y, r, g, b
-            );
-        }
-    }
-}
-
-// Soft-scaled glyph: each output pixel blends by source coverage (less blocky).
-void draw_char_soft(
-    std::uint8_t* fb_mem,
-    int fb_w,
-    int fb_h,
-    int line_bytes,
-    int bpp,
-    int red_off,
-    int green_off,
-    int blue_off,
-    int x0,
-    int y0,
-    char ch,
-    int dst_w,
-    int dst_h
-) {
-    const std::uint8_t* g = glyph8x12(ch);
-    if (dst_w < 1 || dst_h < 1) {
-        return;
-    }
-
-    for (int py = 0; py < dst_h; ++py) {
-        const float v0 = static_cast<float>(py) * static_cast<float>(k_font_h)
-            / static_cast<float>(dst_h);
-        const float v1 = static_cast<float>(py + 1) * static_cast<float>(k_font_h)
-            / static_cast<float>(dst_h);
-        const int row0 = std::max(0, static_cast<int>(v0));
-        const int row1 = std::min(k_font_h, static_cast<int>(std::ceil(v1)));
-
-        for (int px = 0; px < dst_w; ++px) {
-            const float u0 = static_cast<float>(px) * static_cast<float>(k_font_w)
-                / static_cast<float>(dst_w);
-            const float u1 = static_cast<float>(px + 1) * static_cast<float>(k_font_w)
-                / static_cast<float>(dst_w);
-            const int col0 = std::max(0, static_cast<int>(u0));
-            const int col1 = std::min(k_font_w, static_cast<int>(std::ceil(u1)));
-
-            float cover = 0.0f;
-            float area = 0.0f;
-            for (int row = row0; row < row1; ++row) {
-                const float y_a = std::max(v0, static_cast<float>(row));
-                const float y_b = std::min(v1, static_cast<float>(row + 1));
-                const float yh = y_b - y_a;
-                if (yh <= 0.0f) {
-                    continue;
-                }
-                const std::uint8_t bits = g[row];
-                for (int col = col0; col < col1; ++col) {
-                    const float x_a = std::max(u0, static_cast<float>(col));
-                    const float x_b = std::min(u1, static_cast<float>(col + 1));
-                    const float xw = x_b - x_a;
-                    if (xw <= 0.0f) {
-                        continue;
-                    }
-                    const float a = xw * yh;
-                    area += a;
-                    if ((bits >> (7 - col)) & 1) {
-                        cover += a;
-                    }
-                }
-            }
-
-            if (area <= 0.0f || cover <= 0.0f) {
-                continue;
-            }
-            const float t = std::clamp(cover / area, 0.0f, 1.0f);
-            // Blend white over the dark plate already under the text.
-            const std::uint8_t c = static_cast<std::uint8_t>(255.0f * t + 0.5f);
-            if (c < 8) {
-                continue;
-            }
-            put_fb_rgb(
-                fb_mem, fb_w, fb_h, line_bytes, bpp,
-                red_off, green_off, blue_off,
-                x0 + px, y0 + py, c, c, c
-            );
-        }
-    }
-}
-
-void draw_text_soft(
-    std::uint8_t* fb_mem,
-    int fb_w,
-    int fb_h,
-    int line_bytes,
-    int bpp,
-    int red_off,
-    int green_off,
-    int blue_off,
-    int x0,
-    int y0,
-    const char* text,
-    int glyph_w,
-    int glyph_h
-) {
-    if (text == nullptr) {
-        return;
-    }
-    const int advance = glyph_w + std::max(1, glyph_w / 8);
-    int x = x0;
-    for (const char* p = text; *p != '\0'; ++p) {
-        draw_char_soft(
-            fb_mem, fb_w, fb_h, line_bytes, bpp,
-            red_off, green_off, blue_off, x, y0, *p, glyph_w, glyph_h
-        );
-        x += advance;
-    }
-}
-
 int text_pixel_width(const char* text, int glyph_w) {
     if (text == nullptr || text[0] == '\0') {
         return 0;
@@ -564,16 +437,142 @@ int text_pixel_width(const char* text, int glyph_w) {
     return n * advance - std::max(1, glyph_w / 8);
 }
 
-void draw_gps_overlay(
-    std::uint8_t* fb_mem,
+float glyph_coverage(char ch, int px, int py, int dst_w, int dst_h) {
+    const std::uint8_t* g = glyph8x12(ch);
+    if (dst_w < 1 || dst_h < 1) {
+        return 0.0f;
+    }
+    const float v0 = static_cast<float>(py) * static_cast<float>(k_font_h)
+        / static_cast<float>(dst_h);
+    const float v1 = static_cast<float>(py + 1) * static_cast<float>(k_font_h)
+        / static_cast<float>(dst_h);
+    const float u0 = static_cast<float>(px) * static_cast<float>(k_font_w)
+        / static_cast<float>(dst_w);
+    const float u1 = static_cast<float>(px + 1) * static_cast<float>(k_font_w)
+        / static_cast<float>(dst_w);
+    const int row0 = std::max(0, static_cast<int>(v0));
+    const int row1 = std::min(k_font_h, static_cast<int>(std::ceil(v1)));
+    const int col0 = std::max(0, static_cast<int>(u0));
+    const int col1 = std::min(k_font_w, static_cast<int>(std::ceil(u1)));
+
+    float cover = 0.0f;
+    float area = 0.0f;
+    for (int row = row0; row < row1; ++row) {
+        const float y_a = std::max(v0, static_cast<float>(row));
+        const float y_b = std::min(v1, static_cast<float>(row + 1));
+        const float yh = y_b - y_a;
+        if (yh <= 0.0f) {
+            continue;
+        }
+        const std::uint8_t bits = g[row];
+        for (int col = col0; col < col1; ++col) {
+            const float x_a = std::max(u0, static_cast<float>(col));
+            const float x_b = std::min(u1, static_cast<float>(col + 1));
+            const float xw = x_b - x_a;
+            if (xw <= 0.0f) {
+                continue;
+            }
+            const float a = xw * yh;
+            area += a;
+            if ((bits >> (7 - col)) & 1) {
+                cover += a;
+            }
+        }
+    }
+    if (area <= 0.0f) {
+        return 0.0f;
+    }
+    return std::clamp(cover / area, 0.0f, 1.0f);
+}
+
+// Blend black glyphs into an RGB buffer (video already filled).
+void stamp_black_text_rgb(
+    std::uint8_t* rgb,
+    int buf_w,
+    int buf_h,
+    int x0,
+    int y0,
+    const char* text,
+    int glyph_w,
+    int glyph_h
+) {
+    if (text == nullptr || rgb == nullptr) {
+        return;
+    }
+    const int advance = glyph_w + std::max(1, glyph_w / 8);
+    int x = x0;
+    for (const char* p = text; *p != '\0'; ++p) {
+        for (int py = 0; py < glyph_h; ++py) {
+            for (int px = 0; px < glyph_w; ++px) {
+                const float t = glyph_coverage(*p, px, py, glyph_w, glyph_h);
+                if (t < 0.08f) {
+                    continue;
+                }
+                const int dx = x + px;
+                const int dy = y0 + py;
+                if (dx < 0 || dy < 0 || dx >= buf_w || dy >= buf_h) {
+                    continue;
+                }
+                const int di = (dy * buf_w + dx) * 3;
+                const float keep = 1.0f - t;
+                rgb[static_cast<size_t>(di)] = static_cast<std::uint8_t>(
+                    rgb[static_cast<size_t>(di)] * keep + 0.5f
+                );
+                rgb[static_cast<size_t>(di + 1)] = static_cast<std::uint8_t>(
+                    rgb[static_cast<size_t>(di + 1)] * keep + 0.5f
+                );
+                rgb[static_cast<size_t>(di + 2)] = static_cast<std::uint8_t>(
+                    rgb[static_cast<size_t>(di + 2)] * keep + 0.5f
+                );
+            }
+        }
+        x += advance;
+    }
+}
+
+void sample_fusion_pixel(
+    const RgbFrame& frame,
     int fb_w,
     int fb_h,
-    int line_bytes,
-    int bpp,
-    int red_off,
-    int green_off,
-    int blue_off,
-    const HudOverlay& overlay
+    int x,
+    int y,
+    std::uint8_t* r,
+    std::uint8_t* g,
+    std::uint8_t* b
+) {
+    const int src_w = frame.width;
+    const int src_h = frame.height;
+    const std::uint8_t* src = frame.rgb.data();
+    const float scale = static_cast<float>(fb_w) / static_cast<float>(src_w);
+    const int dst_w = fb_w;
+    const int dst_h = std::max(1, static_cast<int>(src_h * scale + 0.5f));
+    const int origin_y = (fb_h - dst_h) / 2;
+    const int sx_img = x;
+    const int sy_img = y - origin_y;
+    if (sx_img < 0 || sy_img < 0 || sx_img >= dst_w || sy_img >= dst_h) {
+        *r = 0;
+        *g = 0;
+        *b = 0;
+        return;
+    }
+    const int sx = (src_w - 1) - (sx_img * src_w) / dst_w;
+    const int sy = (src_h - 1) - (sy_img * src_h) / dst_h;
+    const int si = (sy * src_w + sx) * 3;
+    *r = src[si];
+    *g = src[si + 1];
+    *b = src[si + 2];
+}
+
+void compose_gps_cache(
+    const RgbFrame& frame,
+    int fb_w,
+    int fb_h,
+    const HudOverlay& overlay,
+    int& box_x,
+    int& box_y,
+    int& box_w,
+    int& box_h,
+    std::vector<std::uint8_t>& cache
 ) {
     char lat_line[48];
     char lon_line[48];
@@ -599,7 +598,6 @@ void draw_gps_overlay(
         std::snprintf(lon_line, sizeof(lon_line), "LON: UNKNOWN");
     }
 
-    // ~75% of prior oversized HUD text (was ~scale 5 on 5x7 => ~35px tall).
     const int glyph_h = std::clamp((fb_h * 26) / 480, 18, 28);
     const int glyph_w = std::max(10, (glyph_h * k_font_w) / k_font_h);
     const int pad = 8;
@@ -609,31 +607,71 @@ void draw_gps_overlay(
     const int w0 = text_pixel_width(lat_line, glyph_w);
     const int w1 = text_pixel_width(lon_line, glyph_w);
     const int block_w = std::max(w0, w1);
-    const int box_x = std::max(0, fb_w - pad - block_w - 6);
-    const int box_y = pad;
-    const int box_w = std::min(fb_w - box_x, block_w + 12);
-    const int box_h = std::min(fb_h - box_y, block_h + 8);
 
-    // Dark plate so pure white glyphs stay readable (no outline that paints over).
-    fill_rect(
-        fb_mem, fb_w, fb_h, line_bytes, bpp,
-        red_off, green_off, blue_off,
-        box_x, box_y, box_w, box_h, 0, 0, 0
-    );
+    box_x = std::max(0, fb_w - pad - block_w - 6);
+    box_y = pad;
+    box_w = std::min(fb_w - box_x, block_w + 12);
+    box_h = std::min(fb_h - box_y, block_h + 8);
+    if (box_w < 1 || box_h < 1) {
+        cache.clear();
+        return;
+    }
 
-    const int x0 = fb_w - pad - w0;
-    const int x1 = fb_w - pad - w1;
-    const int y0 = pad + 4;
+    cache.assign(static_cast<size_t>(box_w * box_h * 3), 0);
+    for (int y = 0; y < box_h; ++y) {
+        for (int x = 0; x < box_w; ++x) {
+            std::uint8_t r = 0;
+            std::uint8_t g = 0;
+            std::uint8_t b = 0;
+            sample_fusion_pixel(frame, fb_w, fb_h, box_x + x, box_y + y, &r, &g, &b);
+            const int di = (y * box_w + x) * 3;
+            cache[static_cast<size_t>(di)] = r;
+            cache[static_cast<size_t>(di + 1)] = g;
+            cache[static_cast<size_t>(di + 2)] = b;
+        }
+    }
+
+    const int x0 = (fb_w - pad - w0) - box_x;
+    const int x1 = (fb_w - pad - w1) - box_x;
+    const int y0 = 4;
     const int y1 = y0 + line_h;
+    stamp_black_text_rgb(cache.data(), box_w, box_h, x0, y0, lat_line, glyph_w, glyph_h);
+    stamp_black_text_rgb(cache.data(), box_w, box_h, x1, y1, lon_line, glyph_w, glyph_h);
+}
 
-    draw_text_soft(
-        fb_mem, fb_w, fb_h, line_bytes, bpp,
-        red_off, green_off, blue_off, x0, y0, lat_line, glyph_w, glyph_h
-    );
-    draw_text_soft(
-        fb_mem, fb_w, fb_h, line_bytes, bpp,
-        red_off, green_off, blue_off, x1, y1, lon_line, glyph_w, glyph_h
-    );
+void blit_rgb_box(
+    std::uint8_t* fb_mem,
+    int fb_w,
+    int fb_h,
+    int line_bytes,
+    int bpp,
+    int red_off,
+    int green_off,
+    int blue_off,
+    int box_x,
+    int box_y,
+    int box_w,
+    int box_h,
+    const std::vector<std::uint8_t>& rgb
+) {
+    if (box_w < 1 || box_h < 1
+        || static_cast<int>(rgb.size()) < box_w * box_h * 3) {
+        return;
+    }
+    for (int y = 0; y < box_h; ++y) {
+        for (int x = 0; x < box_w; ++x) {
+            const int si = (y * box_w + x) * 3;
+            put_fb_rgb(
+                fb_mem, fb_w, fb_h, line_bytes, bpp,
+                red_off, green_off, blue_off,
+                box_x + x,
+                box_y + y,
+                rgb[static_cast<size_t>(si)],
+                rgb[static_cast<size_t>(si + 1)],
+                rgb[static_cast<size_t>(si + 2)]
+            );
+        }
+    }
 }
 
 void blit_lidar_cache(
@@ -791,6 +829,8 @@ bool DisplayHud::init(int /*width*/, int /*height*/) {
     );
     lidar_side_ = lidar_square_side(fb_w_, fb_h_);
     lidar_cache_.clear();
+    gps_cache_.clear();
+    gps_box_x_ = gps_box_y_ = gps_box_w_ = gps_box_h_ = 0;
     logutil::info(
         std::string("DisplayHud fb ") + opened + " "
         + std::to_string(fb_w_) + "x" + std::to_string(fb_h_)
@@ -816,6 +856,8 @@ void DisplayHud::shutdown() {
 #endif
     lidar_cache_.clear();
     lidar_side_ = 0;
+    gps_cache_.clear();
+    gps_box_x_ = gps_box_y_ = gps_box_w_ = gps_box_h_ = 0;
     enabled = false;
 }
 
@@ -844,6 +886,19 @@ bool DisplayHud::draw(
         lidar_side_ = lidar_square_side(fb_w_, fb_h_);
     }
 
+    // Build GPS overlay offscreen (video + black text) before touching the FB.
+    compose_gps_cache(
+        frame,
+        fb_w_,
+        fb_h_,
+        overlay,
+        gps_box_x_,
+        gps_box_y_,
+        gps_box_w_,
+        gps_box_h_,
+        gps_cache_
+    );
+
     // Refresh cached lidar inset when a new scan arrives.
     if (lidar_or_null != nullptr) {
         LidarMap mapper;
@@ -854,10 +909,11 @@ bool DisplayHud::draw(
         }
     }
 
-    // Fusion never paints the lidar rect; cache is redrawn every frame on top.
+    // Fusion skips lidar + GPS rects; overlays are copied as finished tiles.
     blit_fusion(
         fb_mem_, fb_w_, fb_h_, fb_line_bytes_, fb_bpp_,
-        red_off_, green_off_, blue_off_, frame, lidar_side_
+        red_off_, green_off_, blue_off_, frame, lidar_side_,
+        gps_box_x_, gps_box_y_, gps_box_w_, gps_box_h_
     );
 
     if (!lidar_cache_.empty()) {
@@ -866,7 +922,6 @@ bool DisplayHud::draw(
             red_off_, green_off_, blue_off_, lidar_side_, lidar_cache_
         );
     } else {
-        // Placeholder until the first scan so the reserved rect is not empty.
         for (int y = 0; y < lidar_side_; ++y) {
             for (int x = 0; x < lidar_side_; ++x) {
                 put_fb_rgb(
@@ -878,9 +933,10 @@ bool DisplayHud::draw(
         }
     }
 
-    draw_gps_overlay(
+    blit_rgb_box(
         fb_mem_, fb_w_, fb_h_, fb_line_bytes_, fb_bpp_,
-        red_off_, green_off_, blue_off_, overlay
+        red_off_, green_off_, blue_off_,
+        gps_box_x_, gps_box_y_, gps_box_w_, gps_box_h_, gps_cache_
     );
 
     poll_stdin_quit(quit_requested_);

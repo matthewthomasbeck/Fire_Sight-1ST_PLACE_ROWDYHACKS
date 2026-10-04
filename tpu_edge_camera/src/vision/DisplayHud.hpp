@@ -50,4 +50,11 @@ private:
     // Last lidar inset; fusion never paints this rect, so no flash.
     int lidar_side_ = 0;
     std::vector<std::uint8_t> lidar_cache_;
+
+    // Top-right GPS plate; composited offscreen then copied in one blit.
+    int gps_box_x_ = 0;
+    int gps_box_y_ = 0;
+    int gps_box_w_ = 0;
+    int gps_box_h_ = 0;
+    std::vector<std::uint8_t> gps_cache_;
 };
