@@ -263,7 +263,8 @@ int main() {
                     + " lon=" + std::to_string(gps.last_fix.longitude)
                 );
             }
-        } else if (gps_log_count == 1 || gps_log_count % 100 == 0) {
+        } else if (gps_log_count % 100 == 0) {
+            // Skip frame 1: refresh is only 50ms, so bytes=0 there is normal.
             // HUD UNKNOWN: separate "port dead" vs "UART ok, module says no lock".
             const char* why = "no_uart_data";
             if (gps.demo_mode) {
