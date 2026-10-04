@@ -3,6 +3,7 @@
 #include "util/Log.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -81,34 +82,78 @@ bool env_truthy(const char* key) {
     return std::string(v) == "1" || std::string(v) == "true" || std::string(v) == "TRUE";
 }
 
-// 5x7 glyphs, MSB = left. Covers LAT/LON/UNKNOWN + digits/sign/dot/colon/space.
-constexpr int k_font_w = 5;
-constexpr int k_font_h = 7;
+// 8x12 glyphs (row = bit row, MSB = left). Denser than 5x7 so scaled text is less blocky.
+constexpr int k_font_w = 8;
+constexpr int k_font_h = 12;
 
-const std::uint8_t* glyph5x7(char ch) {
-    static const std::uint8_t g_space[7] = {0, 0, 0, 0, 0, 0, 0};
-    static const std::uint8_t g_colon[7] = {0x00, 0x0C, 0x0C, 0x00, 0x0C, 0x0C, 0x00};
-    static const std::uint8_t g_dot[7] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x0C, 0x0C};
-    static const std::uint8_t g_minus[7] = {0x00, 0x00, 0x00, 0x1F, 0x00, 0x00, 0x00};
-    static const std::uint8_t g_plus[7] = {0x00, 0x04, 0x04, 0x1F, 0x04, 0x04, 0x00};
-    static const std::uint8_t g_0[7] = {0x0E, 0x11, 0x13, 0x15, 0x19, 0x11, 0x0E};
-    static const std::uint8_t g_1[7] = {0x04, 0x0C, 0x04, 0x04, 0x04, 0x04, 0x0E};
-    static const std::uint8_t g_2[7] = {0x0E, 0x11, 0x01, 0x06, 0x08, 0x10, 0x1F};
-    static const std::uint8_t g_3[7] = {0x1F, 0x02, 0x04, 0x02, 0x01, 0x11, 0x0E};
-    static const std::uint8_t g_4[7] = {0x02, 0x06, 0x0A, 0x12, 0x1F, 0x02, 0x02};
-    static const std::uint8_t g_5[7] = {0x1F, 0x10, 0x1E, 0x01, 0x01, 0x11, 0x0E};
-    static const std::uint8_t g_6[7] = {0x06, 0x08, 0x10, 0x1E, 0x11, 0x11, 0x0E};
-    static const std::uint8_t g_7[7] = {0x1F, 0x01, 0x02, 0x04, 0x08, 0x08, 0x08};
-    static const std::uint8_t g_8[7] = {0x0E, 0x11, 0x11, 0x0E, 0x11, 0x11, 0x0E};
-    static const std::uint8_t g_9[7] = {0x0E, 0x11, 0x11, 0x0F, 0x01, 0x02, 0x0C};
-    static const std::uint8_t g_A[7] = {0x0E, 0x11, 0x11, 0x1F, 0x11, 0x11, 0x11};
-    static const std::uint8_t g_K[7] = {0x11, 0x12, 0x14, 0x18, 0x14, 0x12, 0x11};
-    static const std::uint8_t g_L[7] = {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x1F};
-    static const std::uint8_t g_N[7] = {0x11, 0x19, 0x15, 0x13, 0x11, 0x11, 0x11};
-    static const std::uint8_t g_O[7] = {0x0E, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0E};
-    static const std::uint8_t g_T[7] = {0x1F, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04};
-    static const std::uint8_t g_U[7] = {0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0E};
-    static const std::uint8_t g_W[7] = {0x11, 0x11, 0x11, 0x15, 0x15, 0x15, 0x0A};
+const std::uint8_t* glyph8x12(char ch) {
+    static const std::uint8_t g_space[12] = {};
+    static const std::uint8_t g_colon[12] = {
+        0x00, 0x00, 0x18, 0x18, 0x00, 0x00, 0x00, 0x18, 0x18, 0x00, 0x00, 0x00
+    };
+    static const std::uint8_t g_dot[12] = {
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x18, 0x18, 0x00, 0x00
+    };
+    static const std::uint8_t g_0[12] = {
+        0x3C, 0x66, 0xC3, 0xC3, 0xC3, 0xC3, 0xC3, 0xC3, 0xC3, 0x66, 0x3C, 0x00
+    };
+    static const std::uint8_t g_1[12] = {
+        0x18, 0x38, 0x78, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x7E, 0x00
+    };
+    static const std::uint8_t g_2[12] = {
+        0x3C, 0x66, 0xC3, 0x03, 0x06, 0x0C, 0x18, 0x30, 0x60, 0xC0, 0xFF, 0x00
+    };
+    static const std::uint8_t g_3[12] = {
+        0x3C, 0x66, 0xC3, 0x03, 0x06, 0x1C, 0x06, 0x03, 0xC3, 0x66, 0x3C, 0x00
+    };
+    static const std::uint8_t g_4[12] = {
+        0x06, 0x0E, 0x1E, 0x36, 0x66, 0xC6, 0xFF, 0x06, 0x06, 0x06, 0x06, 0x00
+    };
+    static const std::uint8_t g_5[12] = {
+        0xFF, 0xC0, 0xC0, 0xC0, 0xFC, 0x06, 0x03, 0x03, 0xC3, 0x66, 0x3C, 0x00
+    };
+    static const std::uint8_t g_6[12] = {
+        0x1C, 0x30, 0x60, 0xC0, 0xFC, 0xC6, 0xC3, 0xC3, 0xC3, 0x66, 0x3C, 0x00
+    };
+    static const std::uint8_t g_7[12] = {
+        0xFF, 0x03, 0x06, 0x06, 0x0C, 0x0C, 0x18, 0x18, 0x30, 0x30, 0x30, 0x00
+    };
+    static const std::uint8_t g_8[12] = {
+        0x3C, 0x66, 0xC3, 0xC3, 0x66, 0x3C, 0x66, 0xC3, 0xC3, 0x66, 0x3C, 0x00
+    };
+    static const std::uint8_t g_9[12] = {
+        0x3C, 0x66, 0xC3, 0xC3, 0xC3, 0x67, 0x3F, 0x03, 0x06, 0x0C, 0x38, 0x00
+    };
+    static const std::uint8_t g_A[12] = {
+        0x18, 0x3C, 0x66, 0xC3, 0xC3, 0xC3, 0xFF, 0xC3, 0xC3, 0xC3, 0xC3, 0x00
+    };
+    static const std::uint8_t g_E[12] = {
+        0xFF, 0xC0, 0xC0, 0xC0, 0xFC, 0xC0, 0xC0, 0xC0, 0xC0, 0xC0, 0xFF, 0x00
+    };
+    static const std::uint8_t g_K[12] = {
+        0xC3, 0xC6, 0xCC, 0xD8, 0xF0, 0xF0, 0xD8, 0xCC, 0xC6, 0xC3, 0xC3, 0x00
+    };
+    static const std::uint8_t g_L[12] = {
+        0xC0, 0xC0, 0xC0, 0xC0, 0xC0, 0xC0, 0xC0, 0xC0, 0xC0, 0xC0, 0xFF, 0x00
+    };
+    static const std::uint8_t g_N[12] = {
+        0xC3, 0xE3, 0xE3, 0xD3, 0xD3, 0xCB, 0xCB, 0xC7, 0xC7, 0xC3, 0xC3, 0x00
+    };
+    static const std::uint8_t g_O[12] = {
+        0x3C, 0x66, 0xC3, 0xC3, 0xC3, 0xC3, 0xC3, 0xC3, 0xC3, 0x66, 0x3C, 0x00
+    };
+    static const std::uint8_t g_S[12] = {
+        0x3C, 0x66, 0xC3, 0xC0, 0x60, 0x3C, 0x06, 0x03, 0xC3, 0x66, 0x3C, 0x00
+    };
+    static const std::uint8_t g_T[12] = {
+        0xFF, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x00
+    };
+    static const std::uint8_t g_U[12] = {
+        0xC3, 0xC3, 0xC3, 0xC3, 0xC3, 0xC3, 0xC3, 0xC3, 0xC3, 0x66, 0x3C, 0x00
+    };
+    static const std::uint8_t g_W[12] = {
+        0xC3, 0xC3, 0xC3, 0xC3, 0xC3, 0xDB, 0xDB, 0xDB, 0xFF, 0x66, 0x66, 0x00
+    };
 
     switch (ch) {
     case ' ':
@@ -117,10 +162,6 @@ const std::uint8_t* glyph5x7(char ch) {
         return g_colon;
     case '.':
         return g_dot;
-    case '-':
-        return g_minus;
-    case '+':
-        return g_plus;
     case '0':
         return g_0;
     case '1':
@@ -144,6 +185,9 @@ const std::uint8_t* glyph5x7(char ch) {
     case 'A':
     case 'a':
         return g_A;
+    case 'E':
+    case 'e':
+        return g_E;
     case 'K':
     case 'k':
         return g_K;
@@ -156,6 +200,9 @@ const std::uint8_t* glyph5x7(char ch) {
     case 'O':
     case 'o':
         return g_O;
+    case 'S':
+    case 's':
+        return g_S;
     case 'T':
     case 't':
         return g_T;
@@ -372,7 +419,35 @@ void blit_fusion(
     }
 }
 
-void draw_char_scaled(
+void fill_rect(
+    std::uint8_t* fb_mem,
+    int fb_w,
+    int fb_h,
+    int line_bytes,
+    int bpp,
+    int red_off,
+    int green_off,
+    int blue_off,
+    int x0,
+    int y0,
+    int w,
+    int h,
+    std::uint8_t r,
+    std::uint8_t g,
+    std::uint8_t b
+) {
+    for (int y = y0; y < y0 + h; ++y) {
+        for (int x = x0; x < x0 + w; ++x) {
+            put_fb_rgb(
+                fb_mem, fb_w, fb_h, line_bytes, bpp,
+                red_off, green_off, blue_off, x, y, r, g, b
+            );
+        }
+    }
+}
+
+// Soft-scaled glyph: each output pixel blends by source coverage (less blocky).
+void draw_char_soft(
     std::uint8_t* fb_mem,
     int fb_w,
     int fb_h,
@@ -384,44 +459,74 @@ void draw_char_scaled(
     int x0,
     int y0,
     char ch,
-    int scale
+    int dst_w,
+    int dst_h
 ) {
-    const std::uint8_t* g = glyph5x7(ch);
-    for (int row = 0; row < k_font_h; ++row) {
-        const std::uint8_t bits = g[row];
-        for (int col = 0; col < k_font_w; ++col) {
-            if (((bits >> (k_font_w - 1 - col)) & 1) == 0) {
-                continue;
-            }
-            for (int dy = 0; dy < scale; ++dy) {
-                for (int dx = 0; dx < scale; ++dx) {
-                    const int px = x0 + col * scale + dx;
-                    const int py = y0 + row * scale + dy;
-                    // Dark outline for contrast on bright fusion.
-                    for (int oy = -1; oy <= 1; ++oy) {
-                        for (int ox = -1; ox <= 1; ++ox) {
-                            if (ox == 0 && oy == 0) {
-                                continue;
-                            }
-                            put_fb_rgb(
-                                fb_mem, fb_w, fb_h, line_bytes, bpp,
-                                red_off, green_off, blue_off,
-                                px + ox, py + oy, 0, 0, 0
-                            );
-                        }
+    const std::uint8_t* g = glyph8x12(ch);
+    if (dst_w < 1 || dst_h < 1) {
+        return;
+    }
+
+    for (int py = 0; py < dst_h; ++py) {
+        const float v0 = static_cast<float>(py) * static_cast<float>(k_font_h)
+            / static_cast<float>(dst_h);
+        const float v1 = static_cast<float>(py + 1) * static_cast<float>(k_font_h)
+            / static_cast<float>(dst_h);
+        const int row0 = std::max(0, static_cast<int>(v0));
+        const int row1 = std::min(k_font_h, static_cast<int>(std::ceil(v1)));
+
+        for (int px = 0; px < dst_w; ++px) {
+            const float u0 = static_cast<float>(px) * static_cast<float>(k_font_w)
+                / static_cast<float>(dst_w);
+            const float u1 = static_cast<float>(px + 1) * static_cast<float>(k_font_w)
+                / static_cast<float>(dst_w);
+            const int col0 = std::max(0, static_cast<int>(u0));
+            const int col1 = std::min(k_font_w, static_cast<int>(std::ceil(u1)));
+
+            float cover = 0.0f;
+            float area = 0.0f;
+            for (int row = row0; row < row1; ++row) {
+                const float y_a = std::max(v0, static_cast<float>(row));
+                const float y_b = std::min(v1, static_cast<float>(row + 1));
+                const float yh = y_b - y_a;
+                if (yh <= 0.0f) {
+                    continue;
+                }
+                const std::uint8_t bits = g[row];
+                for (int col = col0; col < col1; ++col) {
+                    const float x_a = std::max(u0, static_cast<float>(col));
+                    const float x_b = std::min(u1, static_cast<float>(col + 1));
+                    const float xw = x_b - x_a;
+                    if (xw <= 0.0f) {
+                        continue;
                     }
-                    put_fb_rgb(
-                        fb_mem, fb_w, fb_h, line_bytes, bpp,
-                        red_off, green_off, blue_off,
-                        px, py, 255, 255, 255
-                    );
+                    const float a = xw * yh;
+                    area += a;
+                    if ((bits >> (7 - col)) & 1) {
+                        cover += a;
+                    }
                 }
             }
+
+            if (area <= 0.0f || cover <= 0.0f) {
+                continue;
+            }
+            const float t = std::clamp(cover / area, 0.0f, 1.0f);
+            // Blend white over the dark plate already under the text.
+            const std::uint8_t c = static_cast<std::uint8_t>(255.0f * t + 0.5f);
+            if (c < 8) {
+                continue;
+            }
+            put_fb_rgb(
+                fb_mem, fb_w, fb_h, line_bytes, bpp,
+                red_off, green_off, blue_off,
+                x0 + px, y0 + py, c, c, c
+            );
         }
     }
 }
 
-void draw_text_scaled(
+void draw_text_soft(
     std::uint8_t* fb_mem,
     int fb_w,
     int fb_h,
@@ -433,28 +538,30 @@ void draw_text_scaled(
     int x0,
     int y0,
     const char* text,
-    int scale
+    int glyph_w,
+    int glyph_h
 ) {
     if (text == nullptr) {
         return;
     }
-    const int advance = (k_font_w + 1) * scale;
+    const int advance = glyph_w + std::max(1, glyph_w / 8);
     int x = x0;
     for (const char* p = text; *p != '\0'; ++p) {
-        draw_char_scaled(
+        draw_char_soft(
             fb_mem, fb_w, fb_h, line_bytes, bpp,
-            red_off, green_off, blue_off, x, y0, *p, scale
+            red_off, green_off, blue_off, x, y0, *p, glyph_w, glyph_h
         );
         x += advance;
     }
 }
 
-int text_pixel_width(const char* text, int scale) {
+int text_pixel_width(const char* text, int glyph_w) {
     if (text == nullptr || text[0] == '\0') {
         return 0;
     }
     const int n = static_cast<int>(std::strlen(text));
-    return n * (k_font_w + 1) * scale - scale;
+    const int advance = glyph_w + std::max(1, glyph_w / 8);
+    return n * advance - std::max(1, glyph_w / 8);
 }
 
 void draw_gps_overlay(
@@ -471,32 +578,61 @@ void draw_gps_overlay(
     char lat_line[48];
     char lon_line[48];
     if (overlay.gps_valid) {
-        std::snprintf(lat_line, sizeof(lat_line), "LAT: %.7f", overlay.lat);
-        std::snprintf(lon_line, sizeof(lon_line), "LON: %.7f", overlay.lon);
+        const char ns = overlay.lat >= 0.0 ? 'N' : 'S';
+        const char ew = overlay.lon >= 0.0 ? 'E' : 'W';
+        std::snprintf(
+            lat_line,
+            sizeof(lat_line),
+            "LAT: %.7f %c",
+            std::fabs(overlay.lat),
+            ns
+        );
+        std::snprintf(
+            lon_line,
+            sizeof(lon_line),
+            "LON: %.7f %c",
+            std::fabs(overlay.lon),
+            ew
+        );
     } else {
         std::snprintf(lat_line, sizeof(lat_line), "LAT: UNKNOWN");
         std::snprintf(lon_line, sizeof(lon_line), "LON: UNKNOWN");
     }
 
-    // Large type; scale with panel width so 800x480 stays readable.
-    const int scale = std::clamp(fb_w / 160, 3, 5);
-    const int pad = 10;
-    const int line_h = k_font_h * scale + scale * 2;
-    const int y0 = pad;
-    const int y1 = pad + line_h;
+    // ~75% of prior oversized HUD text (was ~scale 5 on 5x7 => ~35px tall).
+    const int glyph_h = std::clamp((fb_h * 26) / 480, 18, 28);
+    const int glyph_w = std::max(10, (glyph_h * k_font_w) / k_font_h);
+    const int pad = 8;
+    const int gap = std::max(4, glyph_h / 6);
+    const int line_h = glyph_h + gap;
+    const int block_h = line_h + glyph_h;
+    const int w0 = text_pixel_width(lat_line, glyph_w);
+    const int w1 = text_pixel_width(lon_line, glyph_w);
+    const int block_w = std::max(w0, w1);
+    const int box_x = std::max(0, fb_w - pad - block_w - 6);
+    const int box_y = pad;
+    const int box_w = std::min(fb_w - box_x, block_w + 12);
+    const int box_h = std::min(fb_h - box_y, block_h + 8);
 
-    const int w0 = text_pixel_width(lat_line, scale);
-    const int w1 = text_pixel_width(lon_line, scale);
-    const int x0 = std::max(pad, fb_w - pad - w0);
-    const int x1 = std::max(pad, fb_w - pad - w1);
-
-    draw_text_scaled(
+    // Dark plate so pure white glyphs stay readable (no outline that paints over).
+    fill_rect(
         fb_mem, fb_w, fb_h, line_bytes, bpp,
-        red_off, green_off, blue_off, x0, y0, lat_line, scale
+        red_off, green_off, blue_off,
+        box_x, box_y, box_w, box_h, 0, 0, 0
     );
-    draw_text_scaled(
+
+    const int x0 = fb_w - pad - w0;
+    const int x1 = fb_w - pad - w1;
+    const int y0 = pad + 4;
+    const int y1 = y0 + line_h;
+
+    draw_text_soft(
         fb_mem, fb_w, fb_h, line_bytes, bpp,
-        red_off, green_off, blue_off, x1, y1, lon_line, scale
+        red_off, green_off, blue_off, x0, y0, lat_line, glyph_w, glyph_h
+    );
+    draw_text_soft(
+        fb_mem, fb_w, fb_h, line_bytes, bpp,
+        red_off, green_off, blue_off, x1, y1, lon_line, glyph_w, glyph_h
     );
 }
 
