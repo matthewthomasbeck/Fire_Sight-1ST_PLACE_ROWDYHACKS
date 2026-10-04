@@ -1,6 +1,6 @@
 # tpu_edge_camera
 
-IR + thermal predator fusion uplink to FireSight EC2. Lidar and GPS come later.
+IR + thermal predator fusion uplink to FireSight EC2. GPS on UART4 (`/dev/ttyAMA4`); lidar later.
 
 ## Layout
 
@@ -17,7 +17,8 @@ tpu_edge_camera/
       CameraDriver.*         # live (libcamera OV5647) + demo fallback
       ThermalDriver.*        # live (MLX90640) + demo fallback
       mlx90640/              # vendored Melexis/Pimoroni
-      LidarDriver.* GpsDriver.*  # unused for now
+      GpsDriver.*               # UART4 NMEA -> HUD overlay + /ingest/gps
+      LidarDriver.*             # unused for now
     vision/
       CameraFusion.*         # thermal / IR / predator fusion + JPEG
       LidarMap.* DisplayHud.*
@@ -56,6 +57,7 @@ Expect log lines `DisplayHud claimed VT2`, `KD_GRAPHICS`, and RGB test bars on t
 - Thermal: I2C1 `/dev/i2c-1` @ `0x33` (MLX90640), async reader.
 - Fusion: port of `C_Hardware_Testing` FusionScreen (EMA, ambient percentile, alpha 0.225, x-shift -2.5).
 - Missing hardware falls back to demo buffers so uplink/HUD still run.
+- GPS: `/dev/ttyAMA4` @ 9600, `$GPRMC`/`$GNRMC`. Logs `GpsDriver live` on open; posts ~1 Hz when fix valid. User needs `dialout`.
 
 ## EC2 targets
 

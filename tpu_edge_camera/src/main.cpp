@@ -3,6 +3,7 @@
 
 #include "config/Config.hpp"
 #include "hardware/CameraDriver.hpp"
+#include "hardware/GpsDriver.hpp"
 #include "hardware/ThermalDriver.hpp"
 #include "net/Auth0M2M.hpp"
 #include "net/UplinkClient.hpp"
@@ -37,6 +38,7 @@ int main() {
 
     CameraDriver camera;
     ThermalDriver thermal;
+    GpsDriver gps;
     CameraFusion fusion;
     DisplayHud hud;
     Auth0M2M auth;
@@ -52,6 +54,9 @@ int main() {
     if (!thermal.init()) {
         logutil::error("thermal init failed");
         return 1;
+    }
+    if (!gps.init(cfg.gps_serial_path, cfg.gps_baud)) {
+        logutil::warn("gps init failed; continuing without GPS");
     }
     fusion.init();
 
@@ -73,6 +78,15 @@ int main() {
     std::atomic<bool> uplink_stop{false};
     int ok_posts = 0;
     int fail_posts = 0;
+
+    std::mutex gps_mu;
+    double gps_lat = 0.0;
+    double gps_lon = 0.0;
+    bool gps_has_fix = false;
+    int ok_gps_posts = 0;
+    int fail_gps_posts = 0;
+    auto last_gps_post = std::chrono::steady_clock::now()
+        - std::chrono::seconds(10);
 
     std::thread uplink_worker;
     if (cfg.uplink_enabled) {
@@ -99,12 +113,49 @@ int main() {
                             + " jpeg_bytes=" + std::to_string(job.size())
                             + " ir=" + (camera.demo_mode ? "demo" : "live")
                             + " therm=" + (thermal.demo_mode ? "demo" : "live")
+                            + " gps=" + (gps.demo_mode ? "demo" : "live")
                         );
                     }
                 } else {
                     ++fail_posts;
                     if (fail_posts <= 3 || fail_posts % 30 == 0) {
                         logutil::warn("post_frame failed: " + uplink.last_error());
+                    }
+                }
+
+                // ~1 Hz GPS JSON alongside frame uplink (non-blocking for HUD).
+                bool do_gps = false;
+                double lat = 0.0;
+                double lon = 0.0;
+                {
+                    std::lock_guard<std::mutex> lock(gps_mu);
+                    const auto now = std::chrono::steady_clock::now();
+                    if (gps_has_fix
+                        && now - last_gps_post >= std::chrono::seconds(1)) {
+                        lat = gps_lat;
+                        lon = gps_lon;
+                        last_gps_post = now;
+                        do_gps = true;
+                    }
+                }
+                if (do_gps) {
+                    if (uplink.post_gps(cfg.gps_id, lat, lon)) {
+                        ++ok_gps_posts;
+                        if (ok_gps_posts == 1 || ok_gps_posts % 30 == 0) {
+                            logutil::info(
+                                "posted gps #" + std::to_string(ok_gps_posts)
+                                + " id=" + cfg.gps_id
+                                + " lat=" + std::to_string(lat)
+                                + " lon=" + std::to_string(lon)
+                            );
+                        }
+                    } else {
+                        ++fail_gps_posts;
+                        if (fail_gps_posts <= 3 || fail_gps_posts % 30 == 0) {
+                            logutil::warn(
+                                "post_gps failed: " + uplink.last_error()
+                            );
+                        }
                     }
                 }
             }
@@ -114,6 +165,7 @@ int main() {
     RgbFrame frame;
     HudOverlay overlay;
     auto last_loop = std::chrono::steady_clock::now();
+    int gps_log_count = 0;
 
     while (true) {
         if (hud.poll_quit()) {
@@ -131,6 +183,29 @@ int main() {
             logutil::warn("thermal refresh failed");
             sleep_for_fps(cfg.target_fps);
             continue;
+        }
+
+        // Short drain so GPS cannot stall IR/fusion pacing.
+        gps.refresh(0.05);
+        {
+            std::lock_guard<std::mutex> lock(gps_mu);
+            gps_has_fix = gps.last_fix.valid;
+            if (gps_has_fix) {
+                gps_lat = gps.last_fix.latitude;
+                gps_lon = gps.last_fix.longitude;
+            }
+        }
+        overlay.gps_valid = gps.last_fix.valid;
+        overlay.lat = gps.last_fix.latitude;
+        overlay.lon = gps.last_fix.longitude;
+        if (gps.last_fix.valid) {
+            ++gps_log_count;
+            if (gps_log_count == 1 || gps_log_count % 100 == 0) {
+                logutil::info(
+                    "gps fix lat=" + std::to_string(gps.last_fix.latitude)
+                    + " lon=" + std::to_string(gps.last_fix.longitude)
+                );
+            }
         }
 
         if (!fusion.render_fusion(camera, thermal, frame)) {
@@ -178,6 +253,7 @@ int main() {
     uplink.shutdown();
     auth.shutdown();
     fusion.shutdown();
+    gps.shutdown();
     thermal.shutdown();
     camera.shutdown();
     return 0;

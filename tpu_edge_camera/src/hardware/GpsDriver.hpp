@@ -28,4 +28,8 @@ struct GpsDriver {
     void shutdown();
 
     static bool parse_gprmc(const std::string& line, GpsFix& out);
+
+private:
+    int fd_ = -1;
+    std::string line_buf_;
 };
