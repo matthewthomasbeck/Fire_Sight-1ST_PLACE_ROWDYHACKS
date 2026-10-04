@@ -1,6 +1,7 @@
-// Thermal stream uplink + optional framebuffer HUD. IR / lidar / GPS filled later.
+// Predator fusion uplink + optional framebuffer HUD (IR + thermal).
 
 #include "config/Config.hpp"
+#include "hardware/CameraDriver.hpp"
 #include "hardware/ThermalDriver.hpp"
 #include "net/Auth0M2M.hpp"
 #include "net/UplinkClient.hpp"
@@ -29,10 +30,11 @@ void sleep_for_fps(int fps) {
 
 int main() {
     const Config cfg = Config::load_from_env();
-    logutil::info("tpu_edge_camera starting (thermal only)");
+    logutil::info("tpu_edge_camera starting (IR + thermal fusion)");
     logutil::info("stream_id=" + cfg.stream_id);
     logutil::info("ec2=" + cfg.ec2_base_url);
 
+    CameraDriver camera;
     ThermalDriver thermal;
     CameraFusion fusion;
     DisplayHud hud;
@@ -42,6 +44,10 @@ int main() {
     auth.init(cfg);
     uplink.init(cfg, &auth);
 
+    if (!camera.init()) {
+        logutil::error("camera init failed");
+        return 1;
+    }
     if (!thermal.init()) {
         logutil::error("thermal init failed");
         return 1;
@@ -90,7 +96,8 @@ int main() {
                         logutil::info(
                             "posted frame #" + std::to_string(ok_posts)
                             + " jpeg_bytes=" + std::to_string(job.size())
-                            + (thermal.demo_mode ? " demo" : " live")
+                            + " ir=" + (camera.demo_mode ? "demo" : "live")
+                            + " therm=" + (thermal.demo_mode ? "demo" : "live")
                         );
                     }
                 } else {
@@ -112,14 +119,19 @@ int main() {
             break;
         }
 
+        if (!camera.refresh()) {
+            logutil::warn("camera refresh failed");
+            sleep_for_fps(cfg.target_fps);
+            continue;
+        }
         if (!thermal.refresh()) {
             logutil::warn("thermal refresh failed");
             sleep_for_fps(cfg.target_fps);
             continue;
         }
 
-        if (!fusion.render_thermal(thermal, frame)) {
-            logutil::warn("render_thermal failed");
+        if (!fusion.render_fusion(camera, thermal, frame)) {
+            logutil::warn("render_fusion failed");
             sleep_for_fps(cfg.target_fps);
             continue;
         }
@@ -140,8 +152,8 @@ int main() {
             }
         }
 
-        // Live MLX already blocks on frame data (~16 Hz). Extra sleep only for demo / headless.
-        if (!hud.enabled || thermal.demo_mode) {
+        // Live sensors already pace the loop; extra sleep for demo / headless.
+        if (!hud.enabled || (camera.demo_mode && thermal.demo_mode)) {
             sleep_for_fps(cfg.target_fps);
         }
     }
@@ -157,5 +169,6 @@ int main() {
     auth.shutdown();
     fusion.shutdown();
     thermal.shutdown();
+    camera.shutdown();
     return 0;
 }

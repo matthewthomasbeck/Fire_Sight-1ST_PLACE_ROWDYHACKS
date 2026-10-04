@@ -29,3 +29,20 @@ target_include_directories(tpu_edge_camera PRIVATE
 
 target_compile_options(tpu_edge_camera PRIVATE -Wall -Wextra)
 target_link_libraries(tpu_edge_camera PRIVATE pthread m)
+
+# libcamera for Arducam IR (optional; demo fallback without it).
+find_package(PkgConfig QUIET)
+if(PkgConfig_FOUND)
+  pkg_check_modules(LIBCAMERA QUIET libcamera)
+endif()
+
+if(LIBCAMERA_FOUND)
+  message(STATUS "libcamera found: enabling HAS_LIBCAMERA")
+  target_compile_definitions(tpu_edge_camera PRIVATE HAS_LIBCAMERA)
+  target_include_directories(tpu_edge_camera PRIVATE ${LIBCAMERA_INCLUDE_DIRS})
+  target_link_directories(tpu_edge_camera PRIVATE ${LIBCAMERA_LIBRARY_DIRS})
+  target_link_libraries(tpu_edge_camera PRIVATE ${LIBCAMERA_LIBRARIES})
+  target_compile_options(tpu_edge_camera PRIVATE ${LIBCAMERA_CFLAGS_OTHER})
+else()
+  message(STATUS "libcamera not found: CameraDriver will use demo mode")
+endif()
