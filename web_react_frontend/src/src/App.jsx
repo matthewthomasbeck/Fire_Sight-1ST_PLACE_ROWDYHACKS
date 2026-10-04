@@ -13,7 +13,11 @@ const STREAMS_URL =
 async function fetchStreams() {
   const res = await fetch(STREAMS_URL, { cache: "no-store" });
   if (!res.ok) throw new Error("missing");
-  const data = await res.json();
+  // Reject SPA HTML fallback (nginx try_files -> index.html) before JSON.parse.
+  const text = await res.text();
+  const trimmed = text.trim();
+  if (!trimmed || trimmed.startsWith("<")) throw new Error("not-json");
+  const data = JSON.parse(trimmed);
   const list = Array.isArray(data) ? data : data.streams;
   if (!Array.isArray(list)) throw new Error("format");
   return list
