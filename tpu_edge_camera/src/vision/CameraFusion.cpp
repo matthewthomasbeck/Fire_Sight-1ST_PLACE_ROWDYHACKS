@@ -306,14 +306,16 @@ bool CameraFusion::render_fusion(
         const float v = (static_cast<float>(y) + 0.5f)
             / static_cast<float>(out_height);
         const float ir_sy = v * ir_h - 0.5f;
-        const float th_sy = v * th_h - 0.5f;
+        // Positive thermal_y_shift_px moves overlay down.
+        const float v_th = v - (thermal_y_shift_px / th_h);
+        const float th_sy = v_th * th_h - 0.5f;
 
         for (int x = 0; x < out_width; ++x) {
             const float u = (static_cast<float>(x) + 0.5f)
                 / static_cast<float>(out_width);
             const float ir_sx = u * ir_w - 0.5f;
 
-            // Mirror thermal + x-shift registration (FusionScreen).
+            // Mirror thermal + xy registration (FusionScreen).
             const float u_th = u - (thermal_x_shift_px / th_w);
             const float th_sx_src = u_th * th_w - 0.5f;
             const float th_sx = (th_w - 1.0f) - th_sx_src;

@@ -27,8 +27,9 @@ struct CameraFusion {
     float warm_span_c = 4.0f;
     // Thermal tint over IR (0 = IR only, 1 = thermal only).
     float thermal_alpha = 0.225f;
-    // Horizontal registration in thermal pixels. Positive = overlay right.
-    float thermal_x_shift_px = -2.5f;
+    // Registration in thermal pixels. Positive x = overlay right; positive y = down.
+    float thermal_x_shift_px = -4.5f;
+    float thermal_y_shift_px = 2.0f;
 
     bool init();
     void shutdown();
