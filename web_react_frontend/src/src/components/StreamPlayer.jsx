@@ -3,41 +3,10 @@ import "./StreamPlayer.css";
 
 const RETRY_MS = 3000;
 const POLL_MS = 120;
-const STORAGE_KEY = "streamUrl";
-const FRAME_MIME = "image/jpeg";
-const JSON_FRAME_KEYS = ["image", "frame", "data", "jpg", "jpeg"];
-
-function readSaved() {
-  try {
-    return localStorage.getItem(STORAGE_KEY) || "";
-  } catch {
-    return "";
-  }
-}
-
-function textToSrc(text) {
-  let value = text.trim();
-  if (value.startsWith("{")) {
-    try {
-      const msg = JSON.parse(value);
-      const key = JSON_FRAME_KEYS.find((k) => typeof msg[k] === "string");
-      if (!key) return null;
-      value = msg[key];
-    } catch {
-      return null;
-    }
-  }
-  if (!value) return null;
-  return value.startsWith("data:") ? value : `data:${FRAME_MIME};base64,${value}`;
-}
 
 function isHttpUrl(url) {
   // Absolute http(s), or same-origin path (e.g. /api/v1/streams/stream_1/jpeg)
   return /^https?:\/\//i.test(url) || url.startsWith("/");
-}
-
-function isWsUrl(url) {
-  return /^wss?:\/\//i.test(url);
 }
 
 function pollUrl(url) {
@@ -45,27 +14,17 @@ function pollUrl(url) {
   return `${url}${sep}t=${Date.now()}`;
 }
 
-function initialUrl(defaultUrl) {
-  const saved = readSaved();
-  if (!saved) return defaultUrl;
-  // Drop legacy raw-WS bookmarks once an HTTP JPEG poll default exists.
-  if (defaultUrl && isWsUrl(saved) && isHttpUrl(defaultUrl)) return defaultUrl;
-  return saved;
-}
-
 const STATUS_TEXT = {
   idle: "No stream",
-  invalid: "Check the address",
+  invalid: "Bad stream URL",
   connecting: "Connecting",
   live: "Live",
   offline: "Offline, retrying",
   waiting: "Waiting for frames",
 };
 
-export default function StreamPlayer({ defaultUrl = "" }) {
-  const [url, setUrl] = useState(() => initialUrl(defaultUrl));
-  const [draft, setDraft] = useState(url);
-  const [status, setStatus] = useState(url ? "connecting" : "idle");
+export default function StreamPlayer({ streamUrl = "" }) {
+  const [status, setStatus] = useState(streamUrl ? "connecting" : "idle");
   const [attempt, setAttempt] = useState(0);
   const [fps, setFps] = useState(0);
 
@@ -73,22 +32,27 @@ export default function StreamPlayer({ defaultUrl = "" }) {
   const frameRef = useRef(null);
 
   useEffect(() => {
-    if (!url) {
+    if (!streamUrl) {
       setStatus("idle");
+      return;
+    }
+    if (!isHttpUrl(streamUrl)) {
+      setStatus("invalid");
       return;
     }
 
     let stopped = false;
     let retryTimer = null;
+    let pollTimer = null;
     let lastObjectUrl = null;
     let frames = 0;
 
-    const show = (src, isObjectUrl) => {
+    const show = (src) => {
       const img = imgRef.current;
       if (!img) return;
       img.src = src;
       if (lastObjectUrl) URL.revokeObjectURL(lastObjectUrl);
-      lastObjectUrl = isObjectUrl ? src : null;
+      lastObjectUrl = src;
       frames += 1;
       setStatus("live");
     };
@@ -105,97 +69,40 @@ export default function StreamPlayer({ defaultUrl = "" }) {
       frames = 0;
     }, 1000);
 
-    // HTTP(S) JPEG poll (EC2 /api/v1/streams/<id>/jpeg)
-    if (isHttpUrl(url)) {
-      setStatus("connecting");
-      let pollTimer = null;
+    setStatus("connecting");
 
-      const tick = async () => {
-        if (stopped) return;
-        try {
-          const res = await fetch(pollUrl(url), {
-            cache: "no-store",
-          });
-          if (res.status === 204) {
-            setStatus((prev) => (prev === "live" ? "waiting" : prev === "connecting" ? "waiting" : prev));
-          } else if (res.ok) {
-            const blob = await res.blob();
-            show(URL.createObjectURL(blob), true);
-          } else {
-            retry();
-            return;
-          }
-        } catch {
+    const tick = async () => {
+      if (stopped) return;
+      try {
+        const res = await fetch(pollUrl(streamUrl), { cache: "no-store" });
+        if (res.status === 204) {
+          setStatus((prev) =>
+            prev === "live" || prev === "connecting" || prev === "waiting" ? "waiting" : prev
+          );
+        } else if (res.ok) {
+          const blob = await res.blob();
+          show(URL.createObjectURL(blob));
+        } else {
           retry();
           return;
         }
-        pollTimer = setTimeout(tick, POLL_MS);
-      };
-
-      tick();
-
-      return () => {
-        stopped = true;
-        clearTimeout(retryTimer);
-        clearTimeout(pollTimer);
-        clearInterval(fpsTimer);
-        if (lastObjectUrl) URL.revokeObjectURL(lastObjectUrl);
-      };
-    }
-
-    // Raw WebSocket JPEG/base64
-    if (!isWsUrl(url)) {
-      setStatus("invalid");
-      clearInterval(fpsTimer);
-      return;
-    }
-
-    setStatus((prev) => (prev === "offline" ? "offline" : "connecting"));
-
-    let ws;
-    try {
-      ws = new WebSocket(url);
-    } catch {
-      retry();
-      return () => {
-        clearTimeout(retryTimer);
-        clearInterval(fpsTimer);
-      };
-    }
-    ws.binaryType = "blob";
-
-    ws.onmessage = (event) => {
-      if (typeof event.data === "string") {
-        const src = textToSrc(event.data);
-        if (src) show(src, false);
-      } else {
-        const blob = new Blob([event.data], { type: FRAME_MIME });
-        show(URL.createObjectURL(blob), true);
+      } catch {
+        retry();
+        return;
       }
+      pollTimer = setTimeout(tick, POLL_MS);
     };
-    ws.onclose = retry;
+
+    tick();
 
     return () => {
       stopped = true;
       clearTimeout(retryTimer);
+      clearTimeout(pollTimer);
       clearInterval(fpsTimer);
-      ws.close();
       if (lastObjectUrl) URL.revokeObjectURL(lastObjectUrl);
     };
-  }, [url, attempt]);
-
-  const connect = (e) => {
-    e.preventDefault();
-    const next = draft.trim();
-    try {
-      localStorage.setItem(STORAGE_KEY, next);
-    } catch {
-      /* storage unavailable */
-    }
-    setStatus(next ? "connecting" : "idle");
-    setUrl(next);
-    setAttempt((a) => a + 1);
-  };
+  }, [streamUrl, attempt]);
 
   const goFullscreen = () => {
     if (document.fullscreenElement) document.exitFullscreen();
@@ -204,43 +111,43 @@ export default function StreamPlayer({ defaultUrl = "" }) {
 
   return (
     <section className="stream">
-      <div className="stream__frame" ref={frameRef}>
+      <div
+        className="stream__frame"
+        ref={frameRef}
+        onDoubleClick={goFullscreen}
+        title="Double-click for full screen"
+      >
         <img
           ref={imgRef}
           className="stream__media"
-          alt="Live stream from the EC2 instance"
+          alt="Live thermal stream"
         />
 
         {status !== "live" && (
           <div className="stream__notice">
             {status === "idle" && (
               <>
-                <h2>No stream address yet</h2>
-                <p>
-                  Paste the EC2 JPEG poll URL, for example
-                  {" "}http://18.223.70.95:8080/api/v1/streams/stream_1/jpeg
-                </p>
+                <h2>Stream not configured</h2>
+                <p>Set VITE_STREAM_URL to the EC2 JPEG poll endpoint and rebuild.</p>
               </>
             )}
             {status === "invalid" && (
               <>
-                <h2>That address will not work</h2>
-                <p>Use http(s):// for JPEG poll or ws(s):// for a raw WebSocket.</p>
+                <h2>Stream URL is invalid</h2>
+                <p>VITE_STREAM_URL must be an http(s) JPEG poll URL or a same-origin /api path.</p>
               </>
             )}
             {status === "connecting" && <h2>Connecting to the stream</h2>}
             {status === "waiting" && (
               <>
                 <h2>Connected, waiting for frames</h2>
-                <p>Start the Pi thermal uplink to stream_1 or stream_2.</p>
+                <p>Start the Pi thermal uplink to stream_1.</p>
               </>
             )}
             {status === "offline" && (
               <>
                 <h2>Cannot reach the stream</h2>
-                <p>
-                  Retrying every {RETRY_MS / 1000} seconds. Check EC2 :8080 and the URL.
-                </p>
+                <p>Retrying every {RETRY_MS / 1000} seconds. Check EC2 on port 8080.</p>
               </>
             )}
           </div>
@@ -250,33 +157,6 @@ export default function StreamPlayer({ defaultUrl = "" }) {
           <span className="stream__dot" aria-hidden="true" />
           {STATUS_TEXT[status]}
           {status === "live" && <span aria-hidden="true">{fps} fps</span>}
-        </div>
-      </div>
-
-      <div className="stream__controls">
-        <form className="stream__source" onSubmit={connect}>
-          <label htmlFor="stream-url">Stream address</label>
-          <div className="stream__row">
-            <input
-              id="stream-url"
-              type="text"
-              inputMode="url"
-              spellCheck="false"
-              autoComplete="off"
-              placeholder="http://18.223.70.95:8080/api/v1/streams/stream_1/jpeg"
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-            />
-            <button type="submit" className="btn btn--primary">
-              Connect
-            </button>
-          </div>
-        </form>
-
-        <div className="stream__actions">
-          <button type="button" className="btn" onClick={goFullscreen} disabled={!url}>
-            Full screen
-          </button>
         </div>
       </div>
     </section>

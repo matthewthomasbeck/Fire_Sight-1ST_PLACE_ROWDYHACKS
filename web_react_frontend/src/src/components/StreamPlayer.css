@@ -46,6 +46,7 @@ body {
   border: 2px solid var(--navy-line);
   border-radius: 6px;
   overflow: hidden;
+  cursor: pointer;
 }
 
 .stream__frame:fullscreen {
@@ -130,48 +131,6 @@ body {
   }
 }
 
-/* ---------- controls ---------- */
-
-.stream__controls {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  gap: 1rem;
-  margin-top: 1rem;
-}
-
-.stream__source {
-  flex: 1 1 22rem;
-}
-
-.stream__source label {
-  display: block;
-  margin-bottom: 0.35rem;
-  font-size: 0.875rem;
-  color: var(--muted);
-}
-
-.stream__row,
-.stream__actions {
-  display: flex;
-  gap: 0.5rem;
-}
-
-.stream__row input {
-  flex: 1;
-  min-width: 0;
-  padding: 0.65rem 0.8rem;
-  border: 2px solid var(--navy-line);
-  border-radius: 6px;
-  background: var(--navy-deep);
-  color: var(--paper);
-  font: inherit;
-}
-
-.stream__row input::placeholder {
-  color: #5f7699;
-}
-
 .btn {
   padding: 0.65rem 1rem;
   border: 2px solid var(--navy-line);
@@ -193,19 +152,7 @@ body {
   cursor: not-allowed;
 }
 
-.btn--primary {
-  border-color: var(--orange);
-  background: var(--orange);
-  color: #fff;
-}
-
-.btn--primary:hover:not(:disabled) {
-  border-color: #ff7a47;
-  background: #ff7a47;
-}
-
-.btn:focus-visible,
-.stream__row input:focus-visible {
+.btn:focus-visible {
   outline: 3px solid var(--paper);
   outline-offset: 2px;
 }

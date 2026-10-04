@@ -32,7 +32,7 @@ export default function App() {
           </button>
         </div>
       </header>
-      <StreamPlayer defaultUrl={DEFAULT_STREAM_URL} />
+      <StreamPlayer streamUrl={DEFAULT_STREAM_URL} />
     </main>
   );
 }
