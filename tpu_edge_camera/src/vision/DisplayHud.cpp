@@ -219,8 +219,8 @@ void draw_test_bars(
 }
 
 int lidar_square_side(int fb_w, int fb_h) {
-    // ~66% of the shorter panel edge.
-    return std::max(1, (std::min(fb_w, fb_h) * 2) / 3);
+    // 50% of the shorter panel edge.
+    return std::max(1, std::min(fb_w, fb_h) / 2);
 }
 
 void blit_fusion(

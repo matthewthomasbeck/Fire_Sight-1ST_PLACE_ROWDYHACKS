@@ -99,7 +99,8 @@ bool LidarMap::render_hud(
         rgb_out[static_cast<size_t>(i + 2)] = 16;
     }
 
-    const float range_mm = 4000.0f;
+    // 2x zoom vs 4 m full-scale (100% closer on the epicenter).
+    const float range_mm = 2000.0f;
     const float cx = (size_px - 1) * 0.5f;
     const float cy = (size_px - 1) * 0.5f;
     const float radius = std::min(cx, cy) * 0.92f;
@@ -125,9 +126,8 @@ bool LidarMap::render_hud(
         const float deg = static_cast<float>(bin) * 0.5f;
         const float rad = deg * 0.01745329252f;
         const float rn = std::clamp(static_cast<float>(hit_mm) / range_mm, 0.0f, 1.0f);
-        // Vertical flip only (no left/right mirror): 0 deg maps toward bottom of
-        // the square so a roof-mounted LD19 reads upright on the panel.
-        const int x = static_cast<int>(cx + radius * rn * std::sin(rad) + 0.5f);
+        // Upright + un-mirrored: flip X vs prior frame, keep Y from upright fix.
+        const int x = static_cast<int>(cx - radius * rn * std::sin(rad) + 0.5f);
         const int y = static_cast<int>(cy + radius * rn * std::cos(rad) + 0.5f);
 
         const float nearness = 1.0f - rn;
