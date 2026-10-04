@@ -130,19 +130,31 @@ bool LidarMap::render_hud(
         const int x = static_cast<int>(cx + radius * rn * std::sin(rad) + 0.5f);
         const int y = static_cast<int>(cy + radius * rn * std::cos(rad) + 0.5f);
 
-        const float nearness = 1.0f - rn;
-        const float bright = 0.40f + 0.60f * (static_cast<float>(intens) / 255.0f);
-        const uint8_t r = static_cast<uint8_t>(
-            std::clamp((60.0f + 195.0f * nearness) * bright, 0.0f, 255.0f)
-        );
-        const uint8_t g = static_cast<uint8_t>(std::clamp(
-            (80.0f + 100.0f * (1.0f - nearness) + 80.0f * nearness) * bright,
-            0.0f,
-            255.0f
-        ));
-        const uint8_t b = static_cast<uint8_t>(
-            std::clamp((40.0f + 200.0f * (1.0f - nearness)) * bright, 0.0f, 255.0f)
-        );
+        // Near = red/yellow, far = blue (same warm/cold language as thermal).
+        const float t = 1.0f - rn; // 1 = close, 0 = far
+        const float bright = 0.55f + 0.45f * (static_cast<float>(intens) / 255.0f);
+        float rf = 0.0f;
+        float gf = 0.0f;
+        float bf = 0.0f;
+        if (t < 0.33f) {
+            const float u = t / 0.33f;
+            rf = 0.0f;
+            gf = 40.0f + 80.0f * u;
+            bf = 255.0f;
+        } else if (t < 0.66f) {
+            const float u = (t - 0.33f) / 0.33f;
+            rf = 255.0f * u;
+            gf = 120.0f + 135.0f * u;
+            bf = 255.0f * (1.0f - u);
+        } else {
+            const float u = (t - 0.66f) / 0.34f;
+            rf = 255.0f;
+            gf = 255.0f * (1.0f - u);
+            bf = 0.0f;
+        }
+        const uint8_t r = static_cast<uint8_t>(std::clamp(rf * bright, 0.0f, 255.0f));
+        const uint8_t g = static_cast<uint8_t>(std::clamp(gf * bright, 0.0f, 255.0f));
+        const uint8_t b = static_cast<uint8_t>(std::clamp(bf * bright, 0.0f, 255.0f));
         put_rgb(x, y, r, g, b);
         put_rgb(x + 1, y, r, g, b);
         put_rgb(x, y + 1, r, g, b);
