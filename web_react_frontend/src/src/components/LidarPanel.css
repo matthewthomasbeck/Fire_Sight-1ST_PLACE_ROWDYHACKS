@@ -2,16 +2,15 @@
   display: flex;
   flex-direction: column;
   gap: 0.65rem;
-  flex: 0 0 auto;
+  width: var(--lidar-size, 28rem);
+  box-sizing: border-box;
 }
 
 .lidar__frame {
   position: relative;
-  /* Match stream frame height so the polar map stays a true square. */
-  width: min(70vh, 36rem);
-  aspect-ratio: 1;
-  height: auto;
-  max-width: 100%;
+  width: var(--lidar-size, 28rem);
+  height: var(--lidar-size, 28rem);
+  box-sizing: border-box;
   background: var(--navy-deep);
   border: 2px solid var(--navy-line);
   border-radius: 6px;
@@ -19,11 +18,10 @@
 }
 
 .lidar__canvas {
-  display: block;
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
-  aspect-ratio: 1;
-  object-fit: contain;
   image-rendering: pixelated;
 }
 
@@ -92,10 +90,14 @@
   text-transform: uppercase;
 }
 
-@media (max-width: 720px) {
-  .lidar__frame {
-    height: auto;
+@media (max-width: 900px) {
+  .lidar {
     width: min(100%, 22rem);
-    margin-inline: auto;
+  }
+
+  .lidar__frame {
+    width: min(100%, 22rem);
+    height: min(100%, 22rem);
+    aspect-ratio: 1;
   }
 }

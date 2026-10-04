@@ -146,7 +146,10 @@ export default function LidarPanel({ lidarId }) {
 
   return (
     <section className="lidar" aria-label="Lidar scan">
-      <div className="lidar__frame">
+      <div
+        className="lidar__frame"
+        style={{ width: 360, height: 360, minWidth: 360, minHeight: 360 }}
+      >
         <canvas
           ref={canvasRef}
           className="lidar__canvas"
