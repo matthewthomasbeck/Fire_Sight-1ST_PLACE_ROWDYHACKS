@@ -448,8 +448,9 @@ void blit_fusion(
             std::uint8_t g = 0;
             std::uint8_t b = 0;
             if (sx_img >= 0 && sy_img >= 0 && sx_img < dst_w && sy_img < dst_h) {
-                // Fusion is 90 deg CCW-corrected; vertical flip only (no mirror).
-                const int sx = (sx_img * src_w) / dst_w;
+                // V flip = upright; H flip = un-mirror. Together this is not a
+                // single-axis mirror of the scene.
+                const int sx = (src_w - 1) - (sx_img * src_w) / dst_w;
                 const int sy = (src_h - 1) - (sy_img * src_h) / dst_h;
                 const int si = (sy * src_w + sx) * 3;
                 r = src[si];
@@ -602,7 +603,7 @@ void sample_fusion_pixel(
         *b = 0;
         return;
     }
-    const int sx = (sx_img * src_w) / dst_w;
+    const int sx = (src_w - 1) - (sx_img * src_w) / dst_w;
     const int sy = (src_h - 1) - (sy_img * src_h) / dst_h;
     const int si = (sy * src_w + sx) * 3;
     *r = src[si];
