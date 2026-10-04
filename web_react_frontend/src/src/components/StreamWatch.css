@@ -1,0 +1,38 @@
+.watch {
+  width: 100%;
+}
+
+.watch__panels {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: flex-start;
+  gap: 1rem;
+}
+
+.watch__video {
+  min-width: 0;
+}
+
+.watch__video .stream__frame {
+  width: auto;
+  height: min(70vh, 36rem);
+  aspect-ratio: 3 / 4;
+  margin-inline: 0;
+}
+
+.watch__video .stream__controls {
+  margin-top: 0.65rem;
+}
+
+.watch__video .stream__actions {
+  justify-content: center;
+}
+
+@media (max-width: 720px) {
+  .watch__video .stream__frame {
+    height: auto;
+    width: min(100%, 22rem);
+    margin-inline: auto;
+  }
+}

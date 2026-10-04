@@ -23,7 +23,7 @@ body {
 }
 
 .page {
-  max-width: 1100px;
+  max-width: 1400px;
   margin: 0 auto;
   padding: clamp(1rem, 3vw, 2.5rem);
 }
@@ -163,4 +163,24 @@ body {
 .btn:focus-visible {
   outline: 3px solid var(--paper);
   outline-offset: 2px;
+}
+
+.stream__controls {
+  margin-top: 0.65rem;
+}
+
+.stream__actions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: center;
+}
+
+.stream__caption {
+  margin: 0.35rem 0 0;
+  text-align: center;
+  color: var(--muted);
+  font-size: 0.9rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }

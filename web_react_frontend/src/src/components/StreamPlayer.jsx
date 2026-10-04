@@ -221,6 +221,7 @@ export default function StreamPlayer({ url }) {
             Full screen
           </button>
         </div>
+        <p className="stream__caption">Camera</p>
       </div>
     </section>
   );

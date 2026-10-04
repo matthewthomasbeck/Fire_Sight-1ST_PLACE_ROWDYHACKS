@@ -18,9 +18,8 @@ def list_lidar():
 
 
 @lidar_bp.route("/lidar/<lidar_id>", methods=["GET"])
-@require_auth
 def get_lidar(lidar_id: str):
-    """Return one lidar scan resource."""
+    """Return one lidar scan. Open like /mjpeg so the SPA <canvas> can poll."""
     if lidar_id not in lidar_ids():
         return jsonify(
             {"resource_id": lidar_id, "available": False, "message": "Unknown lidar id"}

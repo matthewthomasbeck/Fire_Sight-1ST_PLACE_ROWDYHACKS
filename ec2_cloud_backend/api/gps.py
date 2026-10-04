@@ -29,9 +29,8 @@ def list_gps():
 
 
 @gps_bp.route("/gps/<gps_id>", methods=["GET"])
-@require_auth
 def get_gps(gps_id: str):
-    """Return one GPS resource."""
+    """Return one GPS fix. Open like /mjpeg so the SPA can poll coords."""
     if gps_id not in gps_ids():
         return jsonify({"resource_id": gps_id, "available": False, "message": "Unknown GPS id"}), 404
     try:

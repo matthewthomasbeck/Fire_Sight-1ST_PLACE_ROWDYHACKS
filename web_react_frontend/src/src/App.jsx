@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import StreamPlayer from "./components/StreamPlayer";
+import StreamWatch from "./components/StreamWatch";
 import StreamList from "./components/StreamList";
 import LoginPage from "./components/LoginPage";
 import { getSession, signOut } from "./auth";
@@ -103,7 +103,7 @@ export default function App() {
           </h1>
           {account}
         </header>
-        {stream && <StreamPlayer url={stream.url} />}
+        {stream && <StreamWatch url={stream.url} />}
         {streams && !stream && (
           <p>That stream isn't in the list any more. Go back and pick another.</p>
         )}
