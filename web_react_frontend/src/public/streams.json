@@ -1,10 +1,4 @@
 [
-  {
-    "name": "Firefighter 1",
-    "url": "/api/v1/streams/stream_1/mjpeg"
-  },
-  {
-    "name": "Firefighter 2",
-    "url": "/api/v1/streams/stream_2/mjpeg"
-  }
+  { "name": "Firefighter 1", "url": "/api/v1/streams/stream_1/mjpeg" },
+  { "name": "Firefighter 2", "url": "/api/v1/streams/stream_2/mjpeg" }
 ]

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { streamKind } from "../streamKind";
 import "./StreamList.css";
 
 const PROBE_TIMEOUT_MS = 5000;
@@ -9,75 +10,63 @@ const STATE_TEXT = {
   offline: "Offline",
 };
 
-function isWsUrl(url) {
-  return /^wss?:\/\//i.test(url || "");
+// Briefly connects to one stream and reports "online" or "offline".
+// Returns a function that cancels the check.
+function probe(url, report) {
+  const kind = streamKind(url);
+  let done = false;
+  let stop = () => {};
+
+  const finish = (state) => {
+    if (done) return;
+    done = true;
+    clearTimeout(timer);
+    stop();
+    if (state) report(state);
+  };
+  const timer = setTimeout(() => finish("offline"), PROBE_TIMEOUT_MS);
+
+  if (kind === "ws") {
+    try {
+      const ws = new WebSocket(url);
+      stop = () => {
+        ws.onopen = ws.onerror = ws.onclose = null;
+        ws.close();
+      };
+      ws.onopen = () => finish("online");
+      ws.onerror = () => finish("offline");
+      ws.onclose = () => finish("offline");
+    } catch {
+      finish("offline");
+    }
+  } else if (kind === "mjpeg") {
+    const img = new Image();
+    stop = () => {
+      img.onload = img.onerror = null;
+      img.src = ""; // drops the connection
+    };
+    img.onload = () => finish("online"); // first frame arrived
+    img.onerror = () => finish("offline");
+    img.src = url;
+  } else {
+    finish("offline");
+  }
+
+  return () => finish(null);
 }
 
-function isHttpUrl(url) {
-  return /^https?:\/\//i.test(url || "") || (url || "").startsWith("/");
-}
-
-// Briefly probes each stream (WebSocket open, or HTTP HEAD/GET).
 function useAvailability(streams) {
   const [states, setStates] = useState({});
 
   useEffect(() => {
     if (!streams) return;
     setStates({});
-    const cleanups = streams.map((stream, i) => {
-      let done = false;
-      let ws = null;
-      let abort = null;
-      const finish = (state) => {
-        if (done) return;
-        done = true;
-        clearTimeout(timer);
-        setStates((prev) => ({ ...prev, [i]: state }));
-        if (ws) {
-          ws.onopen = ws.onerror = ws.onclose = null;
-          ws.close();
-        }
-        if (abort) abort.abort();
-      };
-      const timer = setTimeout(() => finish("offline"), PROBE_TIMEOUT_MS);
-
-      if (isWsUrl(stream.url)) {
-        try {
-          ws = new WebSocket(stream.url);
-          ws.onopen = () => finish("online");
-          ws.onerror = () => finish("offline");
-          ws.onclose = () => finish("offline");
-        } catch {
-          finish("offline");
-        }
-      } else if (isHttpUrl(stream.url)) {
-        abort = new AbortController();
-        fetch(stream.url, {
-          method: "GET",
-          cache: "no-store",
-          signal: abort.signal,
-          headers: { Accept: "multipart/x-mixed-replace, image/jpeg, */*" },
-        })
-          .then((res) => {
-            // 200 with body, or 204 (no frame yet) both mean the endpoint is up.
-            finish(res.ok || res.status === 204 ? "online" : "offline");
-          })
-          .catch(() => finish("offline"));
-      } else {
-        finish("offline");
-      }
-
-      return () => {
-        done = true;
-        clearTimeout(timer);
-        if (ws) {
-          ws.onopen = ws.onerror = ws.onclose = null;
-          ws.close();
-        }
-        if (abort) abort.abort();
-      };
-    });
-    return () => cleanups.forEach((stop) => stop());
+    const cancels = streams.map((stream, i) =>
+      probe(stream.url, (state) =>
+        setStates((prev) => ({ ...prev, [i]: state }))
+      )
+    );
+    return () => cancels.forEach((cancel) => cancel());
   }, [streams]);
 
   return states;
@@ -116,8 +105,8 @@ export default function StreamList({ streams, loadError, onRefresh }) {
 
       {!loadError && streams.length === 0 && (
         <p className="streams__message">
-          Add a name and stream URL (MJPEG …/mjpeg or WebSocket) to
-          streams.json, then rebuild.
+          Add a name and address for each stream to public/streams.json, then
+          rebuild.
         </p>
       )}
 
