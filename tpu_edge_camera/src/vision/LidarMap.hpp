@@ -21,6 +21,6 @@ struct LidarMap {
     void shutdown();
 
     bool snapshot(const LidarDriver& lidar, LidarMapPayload& out);
-    bool to_json(const LidarMapPayload& map, const std::string& stream_id, std::string& json_out);
+    bool to_json(const LidarMapPayload& map, const std::string& lidar_id, std::string& json_out);
     bool render_hud(const LidarMapPayload& map, int size_px, std::vector<std::uint8_t>& rgb_out);
 };

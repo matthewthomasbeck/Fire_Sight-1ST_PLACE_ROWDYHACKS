@@ -1,5 +1,5 @@
 ############################################################
-# Resource registry: stream_1, stream_2, gps_1, gps_2.
+# Resource registry: stream_1/2, gps_1/2, lidar_1/2.
 ############################################################
 
 from __future__ import annotations
@@ -21,6 +21,11 @@ def gps_ids() -> List[str]:
     return [p.strip() for p in raw.split(",") if p.strip()]
 
 
+def lidar_ids() -> List[str]:
+    raw = (os.getenv("LIDAR_IDS") or "lidar_1,lidar_2").strip()
+    return [p.strip() for p in raw.split(",") if p.strip()]
+
+
 class ResourceStore:
     """Thread-safe latest value per resource id. Streams store raw JPEG bytes."""
 
@@ -31,6 +36,7 @@ class ResourceStore:
         self._stream_ts_ms: Dict[str, Optional[int]] = {sid: None for sid in stream_ids()}
         self._stream_seq: Dict[str, int] = {sid: 0 for sid in stream_ids()}
         self._gps: Dict[str, Optional[Dict[str, Any]]] = {gid: None for gid in gps_ids()}
+        self._lidar: Dict[str, Optional[Dict[str, Any]]] = {lid: None for lid in lidar_ids()}
 
     def set_stream_jpeg_bytes(self, stream_id: str, jpeg: Optional[bytes]) -> None:
         if stream_id not in self._streams:
@@ -143,6 +149,38 @@ class ResourceStore:
 
     def list_gps(self) -> Dict[str, Any]:
         return {"locations": [self.get_gps(gid) for gid in gps_ids()]}
+
+    def set_lidar(self, lidar_id: str, scan: Dict[str, Any]) -> None:
+        if lidar_id not in self._lidar:
+            raise ValueError(f"unknown lidar_id: {lidar_id}")
+        payload = {
+            "resource_id": lidar_id,
+            "available": True,
+            "updated_at_ms": int(time.time() * 1000),
+            **scan,
+        }
+        with self._lock:
+            self._lidar[lidar_id] = payload
+
+    def get_lidar(self, lidar_id: str) -> Dict[str, Any]:
+        if lidar_id not in self._lidar:
+            return {
+                "resource_id": lidar_id,
+                "available": False,
+                "message": "Unknown lidar id",
+            }
+        with self._lock:
+            row = self._lidar.get(lidar_id)
+        if not row:
+            return {
+                "resource_id": lidar_id,
+                "available": False,
+                "message": "Lidar not available",
+            }
+        return {**row, "message": "ok"}
+
+    def list_lidar(self) -> Dict[str, Any]:
+        return {"scans": [self.get_lidar(lid) for lid in lidar_ids()]}
 
 
 store = ResourceStore()

@@ -35,6 +35,7 @@ Config Config::load_from_env() {
     Config c;
     c.stream_id = env_or("STREAM_ID", c.stream_id);
     c.gps_id = env_or("GPS_ID", c.gps_id);
+    c.lidar_id = env_or("LIDAR_ID", c.lidar_id);
     c.ec2_base_url = env_or("EC2_BASE_URL", c.ec2_base_url);
 
     c.auth0_domain = env_or("AUTH0_DOMAIN", "");

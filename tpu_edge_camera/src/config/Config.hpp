@@ -7,6 +7,7 @@
 struct Config {
     std::string stream_id = "stream_1";
     std::string gps_id = "gps_1";
+    std::string lidar_id = "lidar_1";
 
     std::string ec2_base_url = "http://100.103.164.9:8080";
 

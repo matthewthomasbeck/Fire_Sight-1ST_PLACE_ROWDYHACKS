@@ -1,10 +1,10 @@
 ############################################################
-# Pi to EC2 uplink (frame / GPS JSON).
+# Pi to EC2 uplink (frame / GPS / lidar JSON).
 ############################################################
 
 from flask import Blueprint, jsonify, request
 
-from helpers.resources import gps_ids, store, stream_ids
+from helpers.resources import gps_ids, lidar_ids, store, stream_ids
 
 ingest_bp = Blueprint("ingest", __name__)
 
@@ -77,3 +77,52 @@ def ingest_gps():
         return jsonify({"status": "error", "message": str(exc)}), 400
 
     return jsonify({"status": "accepted", "gps_id": gps_id}), 202
+
+
+@ingest_bp.route("/ingest/lidar", methods=["POST"])
+def ingest_lidar():
+    """
+    Body: {
+      "lidar_id": "lidar_1"|"lidar_2",
+      "bin_count": 720,
+      "valid_bins": int,
+      "speed_dps": float,
+      "distance_mm": [uint16...],
+      "intensity": [uint8...]
+    }
+    """
+    body = request.get_json(silent=True) or {}
+    lidar_id = body.get("lidar_id")
+    if lidar_id not in lidar_ids():
+        return jsonify({"status": "error", "message": "unknown lidar_id"}), 400
+
+    distance_mm = body.get("distance_mm")
+    intensity = body.get("intensity")
+    if not isinstance(distance_mm, list) or not isinstance(intensity, list):
+        return jsonify({"status": "error", "message": "distance_mm/intensity arrays required"}), 400
+
+    try:
+        bin_count = int(body.get("bin_count") or len(distance_mm))
+        valid_bins = int(body.get("valid_bins") or 0)
+        speed_dps = float(body.get("speed_dps") or 0.0)
+    except (TypeError, ValueError):
+        return jsonify({"status": "error", "message": "bin_count/valid_bins/speed_dps invalid"}), 400
+
+    if bin_count <= 0 or len(distance_mm) < bin_count or len(intensity) < bin_count:
+        return jsonify({"status": "error", "message": "scan arrays shorter than bin_count"}), 400
+
+    try:
+        store.set_lidar(
+            lidar_id,
+            {
+                "bin_count": bin_count,
+                "valid_bins": valid_bins,
+                "speed_dps": speed_dps,
+                "distance_mm": distance_mm[:bin_count],
+                "intensity": intensity[:bin_count],
+            },
+        )
+    except ValueError as exc:
+        return jsonify({"status": "error", "message": str(exc)}), 400
+
+    return jsonify({"status": "accepted", "lidar_id": lidar_id}), 202

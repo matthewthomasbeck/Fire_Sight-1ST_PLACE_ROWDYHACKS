@@ -1,15 +1,17 @@
-// Predator fusion uplink + optional framebuffer HUD (IR + thermal).
+// Predator fusion uplink + optional framebuffer HUD (IR + thermal + lidar).
 // IR paces the loop; thermal is async so GetFrameData cannot stall fusion.
 
 #include "config/Config.hpp"
 #include "hardware/CameraDriver.hpp"
 #include "hardware/GpsDriver.hpp"
+#include "hardware/LidarDriver.hpp"
 #include "hardware/ThermalDriver.hpp"
 #include "net/Auth0M2M.hpp"
 #include "net/UplinkClient.hpp"
 #include "util/Log.hpp"
 #include "vision/CameraFusion.hpp"
 #include "vision/DisplayHud.hpp"
+#include "vision/LidarMap.hpp"
 
 #include <atomic>
 #include <chrono>
@@ -32,13 +34,15 @@ void sleep_for_fps(int fps) {
 
 int main() {
     const Config cfg = Config::load_from_env();
-    logutil::info("tpu_edge_camera starting (IR + thermal fusion)");
+    logutil::info("tpu_edge_camera starting (IR + thermal + lidar)");
     logutil::info("stream_id=" + cfg.stream_id);
     logutil::info("ec2=" + cfg.ec2_base_url);
 
     CameraDriver camera;
     ThermalDriver thermal;
     GpsDriver gps;
+    LidarDriver lidar;
+    LidarMap lidar_map;
     CameraFusion fusion;
     DisplayHud hud;
     Auth0M2M auth;
@@ -58,6 +62,10 @@ int main() {
     if (!gps.init(cfg.gps_serial_path, cfg.gps_baud)) {
         logutil::warn("gps init failed; continuing without GPS");
     }
+    if (!lidar.init(cfg.lidar_serial_path, cfg.lidar_baud)) {
+        logutil::warn("lidar init failed; continuing without lidar");
+    }
+    lidar_map.init();
     fusion.init();
 
     hud.enabled = cfg.hud_enabled;
@@ -88,6 +96,14 @@ int main() {
     auto last_gps_post = std::chrono::steady_clock::now()
         - std::chrono::seconds(10);
 
+    std::mutex lidar_mu;
+    std::string lidar_json;
+    bool lidar_has_scan = false;
+    int ok_lidar_posts = 0;
+    int fail_lidar_posts = 0;
+    auto last_lidar_post = std::chrono::steady_clock::now()
+        - std::chrono::seconds(10);
+
     std::thread uplink_worker;
     if (cfg.uplink_enabled) {
         uplink_worker = std::thread([&]() {
@@ -114,6 +130,7 @@ int main() {
                             + " ir=" + (camera.demo_mode ? "demo" : "live")
                             + " therm=" + (thermal.demo_mode ? "demo" : "live")
                             + " gps=" + (gps.demo_mode ? "demo" : "live")
+                            + " lidar=" + (lidar.demo_mode ? "demo" : "live")
                         );
                     }
                 } else {
@@ -158,14 +175,50 @@ int main() {
                         }
                     }
                 }
+
+                // ~2 Hz lidar JSON (scan is larger than GPS; keep off the IR thread).
+                bool do_lidar = false;
+                std::string lidar_body;
+                {
+                    std::lock_guard<std::mutex> lock(lidar_mu);
+                    const auto now = std::chrono::steady_clock::now();
+                    if (lidar_has_scan
+                        && now - last_lidar_post >= std::chrono::milliseconds(500)) {
+                        lidar_body.swap(lidar_json);
+                        lidar_has_scan = false;
+                        last_lidar_post = now;
+                        do_lidar = !lidar_body.empty();
+                    }
+                }
+                if (do_lidar) {
+                    if (uplink.post_lidar_json(lidar_body)) {
+                        ++ok_lidar_posts;
+                        if (ok_lidar_posts == 1 || ok_lidar_posts % 30 == 0) {
+                            logutil::info(
+                                "posted lidar #" + std::to_string(ok_lidar_posts)
+                                + " id=" + cfg.lidar_id
+                                + " bytes=" + std::to_string(lidar_body.size())
+                            );
+                        }
+                    } else {
+                        ++fail_lidar_posts;
+                        if (fail_lidar_posts <= 3 || fail_lidar_posts % 30 == 0) {
+                            logutil::warn(
+                                "post_lidar failed: " + uplink.last_error()
+                            );
+                        }
+                    }
+                }
             }
         });
     }
 
     RgbFrame frame;
     HudOverlay overlay;
+    LidarMapPayload lidar_payload;
     auto last_loop = std::chrono::steady_clock::now();
     int gps_log_count = 0;
+    int lidar_log_count = 0;
 
     while (true) {
         if (hud.poll_quit()) {
@@ -208,6 +261,32 @@ int main() {
             }
         }
 
+        lidar.refresh();
+        const LidarMapPayload* lidar_for_hud = nullptr;
+        if (lidar_map.snapshot(lidar, lidar_payload)) {
+            lidar_for_hud = &lidar_payload;
+            ++lidar_log_count;
+            if (lidar_log_count == 1 || lidar_log_count % 100 == 0) {
+                logutil::info(
+                    std::string("lidar ")
+                    + (lidar.demo_mode ? "demo" : "live")
+                    + " bins=" + std::to_string(lidar.valid_bins)
+                    + " ok=" + std::to_string(lidar.packets_ok)
+                    + " bad=" + std::to_string(lidar.packets_bad)
+                    + (lidar.port_path[0] ? std::string(" path=") + lidar.port_path : "")
+                );
+            }
+
+            if (cfg.uplink_enabled) {
+                std::string json;
+                if (lidar_map.to_json(lidar_payload, cfg.lidar_id, json)) {
+                    std::lock_guard<std::mutex> lock(lidar_mu);
+                    lidar_json.swap(json);
+                    lidar_has_scan = true;
+                }
+            }
+        }
+
         if (!fusion.render_fusion(camera, thermal, frame)) {
             logutil::warn("render_fusion failed");
             sleep_for_fps(cfg.target_fps);
@@ -215,7 +294,7 @@ int main() {
         }
 
         if (hud.enabled) {
-            hud.draw(frame, nullptr, overlay);
+            hud.draw(frame, lidar_for_hud, overlay);
         }
 
         if (cfg.uplink_enabled) {
@@ -253,6 +332,8 @@ int main() {
     uplink.shutdown();
     auth.shutdown();
     fusion.shutdown();
+    lidar_map.shutdown();
+    lidar.shutdown();
     gps.shutdown();
     thermal.shutdown();
     camera.shutdown();

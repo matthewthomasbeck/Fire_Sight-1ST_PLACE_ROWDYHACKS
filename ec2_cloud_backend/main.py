@@ -25,6 +25,7 @@ from flask_cors import CORS
 from api.gps import gps_bp
 from api.health import health_bp
 from api.ingest import ingest_bp
+from api.lidar import lidar_bp
 from api.me import me_bp
 from api.streams import streams_bp
 from helpers.auth0 import auth0_config_summary
@@ -64,6 +65,7 @@ def create_app() -> Flask:
     app.register_blueprint(me_bp, url_prefix="/api/v1")
     app.register_blueprint(streams_bp, url_prefix="/api/v1")
     app.register_blueprint(gps_bp, url_prefix="/api/v1")
+    app.register_blueprint(lidar_bp, url_prefix="/api/v1")
     app.register_blueprint(ingest_bp, url_prefix="/api/v1")
 
     init_socketio(app)

@@ -322,7 +322,7 @@ void DisplayHud::shutdown() {
 
 bool DisplayHud::draw(
     const RgbFrame& frame,
-    const LidarMapPayload* /*lidar_or_null*/,
+    const LidarMapPayload* lidar_or_null,
     const HudOverlay& /*overlay*/
 ) {
     if (!enabled) {
@@ -331,6 +331,7 @@ bool DisplayHud::draw(
 
 #if !defined(__linux__)
     (void)frame;
+    (void)lidar_or_null;
     return true;
 #else
     if (fb_mem_ == nullptr || frame.width <= 0 || frame.height <= 0
@@ -377,6 +378,49 @@ bool DisplayHud::draw(
                     static_cast<std::uint16_t>(px);
             } else {
                 *reinterpret_cast<std::uint32_t*>(row + x * 4) = px;
+            }
+        }
+    }
+
+    // Bottom-right polar inset from LD19 scan (same palette as LidarScreen).
+    if (lidar_or_null != nullptr) {
+        const int inset = std::clamp(std::min(fb_w_, fb_h_) / 3, 96, 220);
+        std::vector<std::uint8_t> lidar_rgb;
+        LidarMap mapper;
+        if (mapper.render_hud(*lidar_or_null, inset, lidar_rgb)
+            && static_cast<int>(lidar_rgb.size()) >= inset * inset * 3) {
+            const int pad = 8;
+            const int x0 = std::max(0, fb_w_ - inset - pad);
+            const int y0 = std::max(0, fb_h_ - inset - pad);
+            for (int y = 0; y < inset; ++y) {
+                const int fy = y0 + y;
+                if (fy < 0 || fy >= fb_h_) {
+                    continue;
+                }
+                std::uint8_t* row =
+                    fb_mem_ + static_cast<std::size_t>(fy) * fb_line_bytes_;
+                for (int x = 0; x < inset; ++x) {
+                    const int fx = x0 + x;
+                    if (fx < 0 || fx >= fb_w_) {
+                        continue;
+                    }
+                    const int si = (y * inset + x) * 3;
+                    const std::uint8_t r = lidar_rgb[static_cast<size_t>(si)];
+                    const std::uint8_t g = lidar_rgb[static_cast<size_t>(si + 1)];
+                    const std::uint8_t b = lidar_rgb[static_cast<size_t>(si + 2)];
+                    if (r == 0 && g == 0 && b == 0) {
+                        continue; // keep fusion under outside-disk pixels
+                    }
+                    const std::uint32_t px = pack_pixel(
+                        fb_bpp_, red_off_, green_off_, blue_off_, r, g, b
+                    );
+                    if (bytes_pp == 2) {
+                        *reinterpret_cast<std::uint16_t*>(row + fx * 2) =
+                            static_cast<std::uint16_t>(px);
+                    } else {
+                        *reinterpret_cast<std::uint32_t*>(row + fx * 4) = px;
+                    }
+                }
             }
         }
     }
