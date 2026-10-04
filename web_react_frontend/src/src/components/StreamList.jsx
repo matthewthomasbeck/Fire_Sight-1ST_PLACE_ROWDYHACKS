@@ -9,7 +9,15 @@ const STATE_TEXT = {
   offline: "Offline",
 };
 
-// Briefly opens each WebSocket to see whether it accepts a connection.
+function isWsUrl(url) {
+  return /^wss?:\/\//i.test(url || "");
+}
+
+function isHttpUrl(url) {
+  return /^https?:\/\//i.test(url || "") || (url || "").startsWith("/");
+}
+
+// Briefly probes each stream (WebSocket open, or HTTP HEAD/GET).
 function useAvailability(streams) {
   const [states, setStates] = useState({});
 
@@ -19,6 +27,7 @@ function useAvailability(streams) {
     const cleanups = streams.map((stream, i) => {
       let done = false;
       let ws = null;
+      let abort = null;
       const finish = (state) => {
         if (done) return;
         done = true;
@@ -28,16 +37,36 @@ function useAvailability(streams) {
           ws.onopen = ws.onerror = ws.onclose = null;
           ws.close();
         }
+        if (abort) abort.abort();
       };
       const timer = setTimeout(() => finish("offline"), PROBE_TIMEOUT_MS);
-      try {
-        ws = new WebSocket(stream.url);
-        ws.onopen = () => finish("online");
-        ws.onerror = () => finish("offline");
-        ws.onclose = () => finish("offline");
-      } catch {
+
+      if (isWsUrl(stream.url)) {
+        try {
+          ws = new WebSocket(stream.url);
+          ws.onopen = () => finish("online");
+          ws.onerror = () => finish("offline");
+          ws.onclose = () => finish("offline");
+        } catch {
+          finish("offline");
+        }
+      } else if (isHttpUrl(stream.url)) {
+        abort = new AbortController();
+        fetch(stream.url, {
+          method: "GET",
+          cache: "no-store",
+          signal: abort.signal,
+          headers: { Accept: "multipart/x-mixed-replace, image/jpeg, */*" },
+        })
+          .then((res) => {
+            // 200 with body, or 204 (no frame yet) both mean the endpoint is up.
+            finish(res.ok || res.status === 204 ? "online" : "offline");
+          })
+          .catch(() => finish("offline"));
+      } else {
         finish("offline");
       }
+
       return () => {
         done = true;
         clearTimeout(timer);
@@ -45,6 +74,7 @@ function useAvailability(streams) {
           ws.onopen = ws.onerror = ws.onclose = null;
           ws.close();
         }
+        if (abort) abort.abort();
       };
     });
     return () => cleanups.forEach((stop) => stop());
@@ -86,8 +116,8 @@ export default function StreamList({ streams, loadError, onRefresh }) {
 
       {!loadError && streams.length === 0 && (
         <p className="streams__message">
-          Add a name and WebSocket address for each stream to
-          public/streams.json, then rebuild.
+          Add a name and stream URL (MJPEG …/mjpeg or WebSocket) to
+          streams.json, then rebuild.
         </p>
       )}
 

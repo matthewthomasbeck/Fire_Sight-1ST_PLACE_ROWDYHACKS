@@ -34,6 +34,9 @@ private:
     std::string sock_host_;
     int sock_port_ = 0;
 
+    // 0 = unknown, 1 = binary jpeg, 2 = legacy JSON base64.
+    int frame_mode_ = 0;
+
     void close_socket_locked();
     bool ensure_socket_locked(const std::string& host, int port);
     bool http_exchange_once(

@@ -23,6 +23,7 @@ def root():
             "streams": "/api/v1/streams",
             "stream": "/api/v1/streams/<stream_id>",
             "stream_jpeg": "/api/v1/streams/<stream_id>/jpeg",
+            "stream_mjpeg": "/api/v1/streams/<stream_id>/mjpeg",
             "gps": "/api/v1/gps",
             "gps_one": "/api/v1/gps/<gps_id>",
             "maps": "/api/v1/maps/config",

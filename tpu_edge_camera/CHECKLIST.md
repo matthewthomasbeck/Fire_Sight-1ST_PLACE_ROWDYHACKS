@@ -31,13 +31,24 @@ tpu_edge_camera/
 2. On Pi: `sudo apt install libcamera-dev`, confirm `rpicam-hello` sees Arducam IR
 3. Build `tpu_edge_camera`, set `STREAM_ID` / `EC2_BASE_URL` / `TARGET_FPS=20`
 4. Touchscreen HUD: direct `/dev/fb0` blit (`HUD_ENABLED=true`, optional `HUD_FB_DEVICE`). Must run on a console VT (not under the desktop compositor). User needs `video` group. Quit with `q` on stdin.
-5. Frontend: `VITE_STREAM_URL=http://18.223.70.95:8080/api/v1/streams/stream_1/jpeg`
+5. Frontend: `VITE_STREAM_URL=/api/v1/streams/stream_1/mjpeg` (push; do not use `/jpeg` poll)
 
 ## Latency notes
 
 - Thermal `GetFrameData` blocks ~16 Hz; reader runs on a background thread so IR/fusion is not gated.
 - Uplink posts raw JPEG over HTTP keep-alive (`/api/v1/ingest/frame/jpeg`); JSON base64 is fallback only.
-- Website lag is mostly network + poll path; local HUD should feel closer to `C_Hardware_Testing`.
+- Website must use `/mjpeg` push. Snapshot `/jpeg` poll is capped by RTT (~4 fps on ~250 ms links).
+
+## HUD from SSH
+
+Framebuffer blit cannot win against a desktop compositor:
+
+```bash
+sudo systemctl stop lightdm   # or gdm3 / sddm
+sudo ./compile_and_run
+```
+
+Expect log lines `DisplayHud claimed VT2`, `KD_GRAPHICS`, and RGB test bars on the panel at startup. If bars never appear, the DE still owns the display. For uplink-only: `HUD_ENABLED=false`.
 
 ## Sensor notes
 

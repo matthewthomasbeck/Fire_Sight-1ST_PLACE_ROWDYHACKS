@@ -217,6 +217,7 @@ bool UplinkClient::init(const Config& cfg, Auth0M2M* auth_or_null) {
     auth_ = auth_or_null;
     last_ok_ = false;
     last_error_.clear();
+    frame_mode_ = 0;
     logutil::info("UplinkClient base=" + cfg_.ec2_base_url);
     return true;
 }
@@ -422,20 +423,48 @@ bool UplinkClient::post_frame(
         return false;
     }
 
-    // Fast path: raw JPEG over keep-alive (no base64 / JSON).
     const std::string binary_url =
         cfg_.ec2_base_url + "/api/v1/ingest/frame/jpeg?stream_id=" + stream_id;
+
+    auto post_json = [&]() -> bool {
+        const std::string b64 = base64::encode(jpeg_bytes);
+        std::ostringstream body;
+        body << "{\"stream_id\":\"" << json_escape(stream_id)
+             << "\",\"frame\":\"" << b64 << "\"}";
+        return http_post_json(cfg_.ingest_frame_url(), body.str());
+    };
+
+    // Stick to the mode that works. Re-probing binary every frame (then falling
+    // back to huge JSON) was capping the website around ~4 fps.
+    if (frame_mode_ == 2) {
+        return post_json();
+    }
+    if (frame_mode_ == 1) {
+        if (http_post_jpeg(binary_url, jpeg_bytes)) {
+            return true;
+        }
+        logutil::warn("binary jpeg ingest dropped; will re-probe next frame");
+        frame_mode_ = 0;
+        return false;
+    }
+
     if (http_post_jpeg(binary_url, jpeg_bytes)) {
+        if (frame_mode_ != 1) {
+            logutil::info("UplinkClient using binary JPEG ingest (keep-alive)");
+        }
+        frame_mode_ = 1;
         return true;
     }
 
-    // Fallback: legacy JSON base64 for older backends.
-    logutil::warn("binary jpeg ingest failed (" + last_error_ + "); trying JSON");
-    const std::string b64 = base64::encode(jpeg_bytes);
-    std::ostringstream body;
-    body << "{\"stream_id\":\"" << json_escape(stream_id)
-         << "\",\"frame\":\"" << b64 << "\"}";
-    return http_post_json(cfg_.ingest_frame_url(), body.str());
+    logutil::warn(
+        "binary jpeg ingest unavailable (" + last_error_
+        + "); using JSON base64. Redeploy ec2_cloud_backend for /ingest/frame/jpeg"
+    );
+    if (post_json()) {
+        frame_mode_ = 2;
+        return true;
+    }
+    return false;
 }
 
 bool UplinkClient::post_gps(const std::string& gps_id, double lat, double lon) {

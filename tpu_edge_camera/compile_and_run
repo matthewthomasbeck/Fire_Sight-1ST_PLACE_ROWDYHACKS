@@ -26,6 +26,17 @@ if ! pkg-config --exists libcamera 2>/dev/null; then
   echo "  On Raspberry Pi OS Bookworm: sudo apt install libcamera-dev" >&2
 fi
 
+# Framebuffer HUD cannot beat a running desktop compositor from SSH.
+if [[ "${HUD_ENABLED:-true}" == "true" || "${HUD_ENABLED:-1}" == "1" ]]; then
+  if [[ -n "${SSH_CONNECTION:-}" || -n "${SSH_TTY:-}" ]]; then
+    echo "note: SSH session detected." >&2
+    echo "  For the DSI panel to show video, stop the desktop then rerun with sudo:" >&2
+    echo "    sudo systemctl stop lightdm   # or: gdm3 / sddm / labwc session" >&2
+    echo "    sudo ./compile_and_run" >&2
+    echo "  Or set HUD_ENABLED=false for headless uplink-only." >&2
+  fi
+fi
+
 mkdir -p build
 cd build
 cmake ..
