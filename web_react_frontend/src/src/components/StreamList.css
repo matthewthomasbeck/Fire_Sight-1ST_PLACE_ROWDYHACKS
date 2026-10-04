@@ -1,0 +1,109 @@
+/* Uses the color variables and .btn styles from StreamPlayer.css */
+
+.page__back {
+  display: inline-block;
+  margin-bottom: 0.75rem;
+  color: var(--muted);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.page__back:hover {
+  color: var(--paper);
+}
+
+.streams__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.streams__summary {
+  margin: 0;
+  color: var(--muted);
+}
+
+.streams__message {
+  max-width: 52ch;
+  color: var(--muted);
+}
+
+.streams__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 2px solid var(--navy-line);
+}
+
+.streams__item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1.5rem;
+  padding: 1.1rem 0.9rem;
+  border-bottom: 2px solid var(--navy-line);
+  border-left: 4px solid transparent;
+  color: var(--paper);
+  text-decoration: none;
+}
+
+.streams__item:hover {
+  background: var(--navy-deep);
+  border-left-color: var(--orange);
+}
+
+.streams__text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.streams__name {
+  font-size: clamp(1.15rem, 2.5vw, 1.5rem);
+  font-weight: 700;
+  font-stretch: 112%;
+}
+
+.streams__url {
+  color: var(--muted);
+  font-size: 0.875rem;
+  overflow-wrap: anywhere;
+}
+
+.streams__state {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.streams__dot {
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+.streams__state--online .streams__dot {
+  background: var(--live);
+}
+
+.streams__state--offline {
+  color: var(--muted);
+}
+
+.streams__state--offline .streams__dot {
+  background: var(--orange);
+}
+
+.page__back:focus-visible,
+.streams__item:focus-visible {
+  outline: 3px solid var(--paper);
+  outline-offset: 2px;
+}

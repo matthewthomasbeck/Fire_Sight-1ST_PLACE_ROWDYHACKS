@@ -1,0 +1,4 @@
+[
+  { "name": "Main stream", "url": "wss://firesight.casa/ws" },
+  { "name": "Second stream", "url": "wss://firesight.casa/ws2" }
+]

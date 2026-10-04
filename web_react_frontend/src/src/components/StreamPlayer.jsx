@@ -2,29 +2,38 @@ import { useEffect, useRef, useState } from "react";
 import "./StreamPlayer.css";
 
 const RETRY_MS = 3000;
-const POLL_MS = 120;
+// If your server sends PNG or WebP frames as raw binary/base64, change this.
+const FRAME_MIME = "image/jpeg";
+// Field names checked when the server sends JSON messages.
+const JSON_FRAME_KEYS = ["image", "frame", "data", "jpg", "jpeg"];
 
-function isHttpUrl(url) {
-  // Absolute http(s), or same-origin path (e.g. /api/v1/streams/stream_1/jpeg)
-  return /^https?:\/\//i.test(url) || url.startsWith("/");
-}
-
-function pollUrl(url) {
-  const sep = url.includes("?") ? "&" : "?";
-  return `${url}${sep}t=${Date.now()}`;
+// Turns one text message into something an <img> can show, or null.
+function textToSrc(text) {
+  let value = text.trim();
+  if (value.startsWith("{")) {
+    try {
+      const msg = JSON.parse(value);
+      const key = JSON_FRAME_KEYS.find((k) => typeof msg[k] === "string");
+      if (!key) return null;
+      value = msg[key];
+    } catch {
+      return null;
+    }
+  }
+  if (!value) return null;
+  return value.startsWith("data:") ? value : `data:${FRAME_MIME};base64,${value}`;
 }
 
 const STATUS_TEXT = {
-  idle: "No stream",
-  invalid: "Bad stream URL",
+  invalid: "Check the address",
   connecting: "Connecting",
   live: "Live",
   offline: "Offline, retrying",
-  waiting: "Waiting for frames",
 };
 
-export default function StreamPlayer({ streamUrl = "" }) {
-  const [status, setStatus] = useState(streamUrl ? "connecting" : "idle");
+// Shows one WebSocket stream. The address comes from the stream list.
+export default function StreamPlayer({ url }) {
+  const [status, setStatus] = useState("connecting");
   const [attempt, setAttempt] = useState(0);
   const [fps, setFps] = useState(0);
 
@@ -32,30 +41,16 @@ export default function StreamPlayer({ streamUrl = "" }) {
   const frameRef = useRef(null);
 
   useEffect(() => {
-    if (!streamUrl) {
-      setStatus("idle");
-      return;
-    }
-    if (!isHttpUrl(streamUrl)) {
+    if (!/^wss?:\/\//i.test(url || "")) {
       setStatus("invalid");
       return;
     }
+    setStatus((prev) => (prev === "offline" ? "offline" : "connecting"));
 
     let stopped = false;
     let retryTimer = null;
-    let pollTimer = null;
     let lastObjectUrl = null;
     let frames = 0;
-
-    const show = (src) => {
-      const img = imgRef.current;
-      if (!img) return;
-      img.src = src;
-      if (lastObjectUrl) URL.revokeObjectURL(lastObjectUrl);
-      lastObjectUrl = src;
-      frames += 1;
-      setStatus("live");
-    };
 
     const retry = () => {
       if (stopped) return;
@@ -64,45 +59,50 @@ export default function StreamPlayer({ streamUrl = "" }) {
       retryTimer = setTimeout(() => setAttempt((a) => a + 1), RETRY_MS);
     };
 
+    const show = (src, isObjectUrl) => {
+      const img = imgRef.current;
+      if (!img) return;
+      img.src = src;
+      if (lastObjectUrl) URL.revokeObjectURL(lastObjectUrl);
+      lastObjectUrl = isObjectUrl ? src : null;
+      frames += 1;
+      setStatus("live");
+    };
+
+    let ws;
+    try {
+      ws = new WebSocket(url);
+    } catch {
+      retry();
+      return () => clearTimeout(retryTimer);
+    }
+    ws.binaryType = "blob";
+
+    ws.onmessage = (event) => {
+      if (typeof event.data === "string") {
+        const src = textToSrc(event.data);
+        if (src) show(src, false);
+      } else {
+        // Binary message: one encoded image per message.
+        const blob = new Blob([event.data], { type: FRAME_MIME });
+        show(URL.createObjectURL(blob), true);
+      }
+    };
+    ws.onclose = retry; // also fires after a connection error
+
     const fpsTimer = setInterval(() => {
       setFps(frames);
       frames = 0;
     }, 1000);
 
-    setStatus("connecting");
-
-    const tick = async () => {
-      if (stopped) return;
-      try {
-        const res = await fetch(pollUrl(streamUrl), { cache: "no-store" });
-        if (res.status === 204) {
-          setStatus((prev) =>
-            prev === "live" || prev === "connecting" || prev === "waiting" ? "waiting" : prev
-          );
-        } else if (res.ok) {
-          const blob = await res.blob();
-          show(URL.createObjectURL(blob));
-        } else {
-          retry();
-          return;
-        }
-      } catch {
-        retry();
-        return;
-      }
-      pollTimer = setTimeout(tick, POLL_MS);
-    };
-
-    tick();
-
     return () => {
       stopped = true;
       clearTimeout(retryTimer);
-      clearTimeout(pollTimer);
       clearInterval(fpsTimer);
+      ws.close();
       if (lastObjectUrl) URL.revokeObjectURL(lastObjectUrl);
     };
-  }, [streamUrl, attempt]);
+  }, [url, attempt]);
 
   const goFullscreen = () => {
     if (document.fullscreenElement) document.exitFullscreen();
@@ -111,43 +111,28 @@ export default function StreamPlayer({ streamUrl = "" }) {
 
   return (
     <section className="stream">
-      <div
-        className="stream__frame"
-        ref={frameRef}
-        onDoubleClick={goFullscreen}
-        title="Double-click for full screen"
-      >
-        <img
-          ref={imgRef}
-          className="stream__media"
-          alt="Live thermal stream"
-        />
+      <div className="stream__frame" ref={frameRef}>
+        <img ref={imgRef} className="stream__media" alt="Live stream" />
 
         {status !== "live" && (
           <div className="stream__notice">
-            {status === "idle" && (
-              <>
-                <h2>Stream not configured</h2>
-                <p>Set VITE_STREAM_URL to the EC2 JPEG poll endpoint and rebuild.</p>
-              </>
-            )}
             {status === "invalid" && (
               <>
-                <h2>Stream URL is invalid</h2>
-                <p>VITE_STREAM_URL must be an http(s) JPEG poll URL or a same-origin /api path.</p>
+                <h2>This stream's address won't work</h2>
+                <p>
+                  A WebSocket address starts with ws:// or wss://. Fix it in
+                  streams.json.
+                </p>
               </>
             )}
             {status === "connecting" && <h2>Connecting to the stream</h2>}
-            {status === "waiting" && (
-              <>
-                <h2>Connected, waiting for frames</h2>
-                <p>Start the Pi thermal uplink to stream_1.</p>
-              </>
-            )}
             {status === "offline" && (
               <>
-                <h2>Cannot reach the stream</h2>
-                <p>Retrying every {RETRY_MS / 1000} seconds. Check EC2 on port 8080.</p>
+                <h2>Can't reach the stream</h2>
+                <p>
+                  Trying again every {RETRY_MS / 1000} seconds. Check that the
+                  stream server is running.
+                </p>
               </>
             )}
           </div>
@@ -157,6 +142,14 @@ export default function StreamPlayer({ streamUrl = "" }) {
           <span className="stream__dot" aria-hidden="true" />
           {STATUS_TEXT[status]}
           {status === "live" && <span aria-hidden="true">{fps} fps</span>}
+        </div>
+      </div>
+
+      <div className="stream__controls">
+        <div className="stream__actions">
+          <button type="button" className="btn" onClick={goFullscreen}>
+            Full screen
+          </button>
         </div>
       </div>
     </section>
