@@ -2,10 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import "./StreamPlayer.css";
 
 const RETRY_MS = 3000;
-// If your server sends PNG or WebP frames as raw binary/base64, change this.
-const FRAME_MIME = "image/jpeg";
-// Field names checked when the server sends JSON messages.
-const JSON_FRAME_KEYS = ["image", "frame", "data", "jpg", "jpeg"];
+// Delay after a successful frame before requesting the next. Keep small;
+// the network RTT already paces the loop.
+const POLL_MS = 16;
 
 // Turns one text message into something an <img> can show, or null.
 function textToSrc(text) {
@@ -51,6 +50,7 @@ export default function StreamPlayer({ url }) {
     let retryTimer = null;
     let lastObjectUrl = null;
     let frames = 0;
+    let inFlight = false;
 
     const retry = () => {
       if (stopped) return;
@@ -94,6 +94,48 @@ export default function StreamPlayer({ url }) {
       setFps(frames);
       frames = 0;
     }, 1000);
+
+    setStatus("connecting");
+
+    const schedule = (ms) => {
+      if (stopped) return;
+      pollTimer = setTimeout(tick, ms);
+    };
+
+    const tick = async () => {
+      if (stopped || inFlight) return;
+      inFlight = true;
+      try {
+        const res = await fetch(pollUrl(streamUrl), { cache: "no-store" });
+        if (stopped) return;
+
+        if (res.status === 204) {
+          setStatus((prev) =>
+            prev === "live" || prev === "connecting" || prev === "waiting"
+              ? "waiting"
+              : prev
+          );
+          schedule(80);
+          return;
+        }
+
+        if (!res.ok) {
+          retry();
+          return;
+        }
+
+        const blob = await res.blob();
+        if (stopped) return;
+        show(URL.createObjectURL(blob));
+        schedule(POLL_MS);
+      } catch {
+        if (!stopped) retry();
+      } finally {
+        inFlight = false;
+      }
+    };
+
+    tick();
 
     return () => {
       stopped = true;

@@ -21,7 +21,7 @@ struct Config {
     std::string lidar_serial_path = "/dev/serial0";
     int lidar_baud = 230400;
 
-    int target_fps = 15;
+    int target_fps = 20;
     bool uplink_enabled = true;
     bool hud_enabled = true;
 

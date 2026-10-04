@@ -1,6 +1,8 @@
-// Thermal stream uplink + optional framebuffer HUD. IR / lidar / GPS filled later.
+// Predator fusion uplink + optional framebuffer HUD (IR + thermal).
+// IR paces the loop; thermal is async so GetFrameData cannot stall fusion.
 
 #include "config/Config.hpp"
+#include "hardware/CameraDriver.hpp"
 #include "hardware/ThermalDriver.hpp"
 #include "net/Auth0M2M.hpp"
 #include "net/UplinkClient.hpp"
@@ -29,10 +31,11 @@ void sleep_for_fps(int fps) {
 
 int main() {
     const Config cfg = Config::load_from_env();
-    logutil::info("tpu_edge_camera starting (thermal only)");
+    logutil::info("tpu_edge_camera starting (IR + thermal fusion)");
     logutil::info("stream_id=" + cfg.stream_id);
     logutil::info("ec2=" + cfg.ec2_base_url);
 
+    CameraDriver camera;
     ThermalDriver thermal;
     CameraFusion fusion;
     DisplayHud hud;
@@ -42,6 +45,10 @@ int main() {
     auth.init(cfg);
     uplink.init(cfg, &auth);
 
+    if (!camera.init()) {
+        logutil::error("camera init failed");
+        return 1;
+    }
     if (!thermal.init()) {
         logutil::error("thermal init failed");
         return 1;
@@ -90,7 +97,8 @@ int main() {
                         logutil::info(
                             "posted frame #" + std::to_string(ok_posts)
                             + " jpeg_bytes=" + std::to_string(job.size())
-                            + (thermal.demo_mode ? " demo" : " live")
+                            + " ir=" + (camera.demo_mode ? "demo" : "live")
+                            + " therm=" + (thermal.demo_mode ? "demo" : "live")
                         );
                     }
                 } else {
@@ -105,6 +113,7 @@ int main() {
 
     RgbFrame frame;
     HudOverlay overlay;
+    auto last_loop = std::chrono::steady_clock::now();
 
     while (true) {
         if (hud.poll_quit()) {
@@ -112,14 +121,20 @@ int main() {
             break;
         }
 
+        if (!camera.refresh()) {
+            logutil::warn("camera refresh failed");
+            sleep_for_fps(cfg.target_fps);
+            continue;
+        }
+        // Non-blocking: copies latest thermal snapshot from async reader.
         if (!thermal.refresh()) {
             logutil::warn("thermal refresh failed");
             sleep_for_fps(cfg.target_fps);
             continue;
         }
 
-        if (!fusion.render_thermal(thermal, frame)) {
-            logutil::warn("render_thermal failed");
+        if (!fusion.render_fusion(camera, thermal, frame)) {
+            logutil::warn("render_fusion failed");
             sleep_for_fps(cfg.target_fps);
             continue;
         }
@@ -130,9 +145,10 @@ int main() {
 
         if (cfg.uplink_enabled) {
             std::vector<std::uint8_t> jpeg;
-            if (fusion.encode_jpeg(frame, jpeg, 80)) {
+            if (fusion.encode_jpeg(frame, jpeg, 70)) {
                 {
                     std::lock_guard<std::mutex> lock(uplink_mu);
+                    // Drop stale frames: only the newest JPEG waits for the worker.
                     uplink_jpeg.swap(jpeg);
                     uplink_has_job = true;
                 }
@@ -140,10 +156,16 @@ int main() {
             }
         }
 
-        // Live MLX already blocks on frame data (~16 Hz). Extra sleep only for demo / headless.
-        if (!hud.enabled || thermal.demo_mode) {
-            sleep_for_fps(cfg.target_fps);
+        // Pace to target_fps. Live IR no longer waits on 16 Hz thermal.
+        const auto now = std::chrono::steady_clock::now();
+        const auto min_period = std::chrono::milliseconds(
+            1000 / (cfg.target_fps < 1 ? 1 : cfg.target_fps)
+        );
+        const auto elapsed = now - last_loop;
+        if (elapsed < min_period) {
+            std::this_thread::sleep_for(min_period - elapsed);
         }
+        last_loop = std::chrono::steady_clock::now();
     }
 
     if (cfg.uplink_enabled) {
@@ -157,5 +179,6 @@ int main() {
     auth.shutdown();
     fusion.shutdown();
     thermal.shutdown();
+    camera.shutdown();
     return 0;
 }

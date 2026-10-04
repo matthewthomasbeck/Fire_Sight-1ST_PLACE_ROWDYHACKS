@@ -2,7 +2,9 @@
 
 #include <cstdint>
 
-// Arducam IR (CSI) via libcamera. Port from C_Hardware_Testing CameraDriver.
+// Arducam IR (OV5647 CSI) via libcamera. Port of C_Hardware_Testing CameraDriver.
+// Captures ISP color frames (like rpicam-hello), downscales to 320x240 RGB.
+// Falls back to animated demo if the camera is missing.
 
 struct CameraDriver {
     static constexpr int width = 320;

@@ -10,6 +10,22 @@ if [[ -f config/edge.env ]]; then
   set +a
 fi
 
+# Source installs often land under /usr/local; help pkg-config and the loader.
+if [[ -d /usr/local/lib/pkgconfig ]]; then
+  export PKG_CONFIG_PATH="/usr/local/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+fi
+if [[ -d /usr/local/lib ]]; then
+  export LD_LIBRARY_PATH="/usr/local/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+fi
+
+# Keep ISP / pipeline chatter off the HUD / logs.
+export LIBCAMERA_LOG_LEVELS="${LIBCAMERA_LOG_LEVELS:-*:FATAL}"
+
+if ! pkg-config --exists libcamera 2>/dev/null; then
+  echo "warning: libcamera not found; CameraDriver will use demo mode" >&2
+  echo "  On Raspberry Pi OS Bookworm: sudo apt install libcamera-dev" >&2
+fi
+
 mkdir -p build
 cd build
 cmake ..
