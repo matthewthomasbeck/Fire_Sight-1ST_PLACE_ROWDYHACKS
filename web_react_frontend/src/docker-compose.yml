@@ -3,9 +3,13 @@ services:
     build:
       context: .
       args:
+        # Same-origin path (works on http and https via nginx /api proxy).
         VITE_STREAM_URL: ${VITE_STREAM_URL:-/api/v1/streams/stream_1/jpeg}
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-}
         VITE_LOGIN_URL: ${VITE_LOGIN_URL:-}
         VITE_DEMO_USER: ${VITE_DEMO_USER:-rowdy}
         VITE_DEMO_PASSWORD: ${VITE_DEMO_PASSWORD:-change-me}
     ports:
-      - "8080:80"
+      - "80:80"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
