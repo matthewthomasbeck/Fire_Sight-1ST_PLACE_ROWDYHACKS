@@ -3,6 +3,8 @@
 # [FireSight](https://github.com/matthewthomasbeck/RowdyHacks) - RowdyHacks 1st Place
 ### By [Matthew Beck](https://www.linkedin.com/in/matthewthomasbeck/) and [Matthew Martinez](https://www.linkedin.com/in/matthewmartinez)
 
+Click [here](https://devpost.com/software/fire-sight) for the Devpost
+
 **Please consider:** if you like it, **star it!**
 
 ## Tech Stack
